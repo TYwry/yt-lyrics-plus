@@ -1,0 +1,838 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      width: 340px;
+      font-family: 'Microsoft JhengHei', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f5f5f7;
+      color: #1d1d1f;
+      overflow: hidden;
+      transition: background 0.3s ease, color 0.3s ease;
+      position: relative; /* CRITICAL: Contains tutorial overlay */
+    }
+    
+    body.dark-mode {
+      background: #1c1c1e;
+      color: #f5f5f7;
+    }
+    
+    .window-bar {
+      height: 52px;
+      background: linear-gradient(180deg, #fafafa 0%, #f0f0f0 100%);
+      border-bottom: 0.5px solid rgba(0, 0, 0, 0.1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 16px;
+      transition: background 0.3s ease, border-color 0.3s ease;
+    }
+    
+    body.dark-mode .window-bar {
+      background: linear-gradient(180deg, #2c2c2e 0%, #1c1c1e 100%);
+      border-bottom: 0.5px solid rgba(255, 255, 255, 0.1);
+    }
+    
+    .window-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #1d1d1f;
+      letter-spacing: -0.08px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: color 0.3s ease;
+    }
+    
+    body.dark-mode .window-title {
+      color: #f5f5f7;
+    }
+    
+    .content {
+      padding: 20px 16px 16px;
+      background: #f5f5f7;
+      transition: background 0.3s ease;
+    }
+    
+    body.dark-mode .content {
+      background: #1c1c1e;
+    }
+    
+    .section {
+      margin-bottom: 20px;
+    }
+    
+    .section-title {
+      font-size: 11px;
+      font-weight: 600;
+      color: #86868b;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      margin-bottom: 8px;
+      padding-left: 4px;
+      transition: color 0.3s ease;
+    }
+    
+    body.dark-mode .section-title {
+      color: #b4b4b9;
+    }
+    
+    .card {
+      background: rgba(255, 255, 255, 0.8);
+      backdrop-filter: blur(20px) saturate(180%);
+      border-radius: 10px;
+      border: 0.5px solid rgba(0, 0, 0, 0.06);
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+      overflow: hidden;
+      transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+    }
+    
+    body.dark-mode .card {
+      background: rgba(44, 44, 46, 0.85);
+      border: 0.5px solid rgba(255, 255, 255, 0.12);
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+    }
+    
+    .setting-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 14px;
+      border-bottom: 0.5px solid rgba(0, 0, 0, 0.06);
+      transition: background 0.15s ease, border-color 0.3s ease;
+    }
+    
+    body.dark-mode .setting-row {
+      border-bottom: 0.5px solid rgba(255, 255, 255, 0.12);
+    }
+    
+    .setting-row:last-child {
+      border-bottom: none;
+    }
+    
+    .setting-row:hover {
+      background: rgba(0, 0, 0, 0.02);
+    }
+    
+    body.dark-mode .setting-row:hover {
+      background: rgba(255, 255, 255, 0.05);
+    }
+    
+    .setting-info {
+      flex: 1;
+      margin-right: 12px;
+    }
+    
+    .setting-label {
+      font-size: 13px;
+      font-weight: 400;
+      color: #1d1d1f;
+      letter-spacing: -0.08px;
+      margin-bottom: 1px;
+      transition: color 0.3s ease;
+    }
+    
+    body.dark-mode .setting-label {
+      color: #f5f5f7;
+    }
+    
+    .setting-description {
+      font-size: 11px;
+      color: #86868b;
+      font-weight: 400;
+      letter-spacing: -0.05px;
+      transition: color 0.3s ease;
+    }
+    
+    body.dark-mode .setting-description {
+      color: #b4b4b9;
+    }
+    
+    .setting-controls {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+    
+    .language-selector {
+      position: relative;
+      flex-shrink: 0;
+    }
+    
+    .language-selector select {
+      padding: 5px 28px 5px 10px;
+      background: rgba(120, 120, 128, 0.12);
+      border: 0.5px solid rgba(0, 0, 0, 0.04);
+      border-radius: 6px;
+      color: #1d1d1f;
+      font-size: 13px;
+      font-family: inherit;
+      cursor: pointer;
+      appearance: none;
+      outline: none;
+      transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+      font-weight: 500;
+    }
+    
+    body.dark-mode .language-selector select {
+      background: rgba(120, 120, 128, 0.28);
+      border: 0.5px solid rgba(255, 255, 255, 0.12);
+      color: #f5f5f7;
+    }
+    
+    .language-selector select:hover {
+      background: rgba(120, 120, 128, 0.18);
+    }
+    
+    body.dark-mode .language-selector select:hover {
+      background: rgba(120, 120, 128, 0.36);
+    }
+    
+    .language-selector select:focus {
+      border-color: #007AFF;
+    }
+    
+    body.dark-mode .language-selector select:focus {
+      border-color: #0A84FF;
+    }
+    
+    .language-selector::after {
+      content: '▼';
+      position: absolute;
+      right: 9px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 8px;
+      color: #86868b;
+      pointer-events: none;
+      transition: color 0.3s ease;
+    }
+    
+    body.dark-mode .language-selector::after {
+      color: #b4b4b9;
+    }
+    
+    .language-selector select option {
+      background: #fff;
+      color: #1d1d1f;
+      padding: 8px;
+    }
+    
+    body.dark-mode .language-selector select option {
+      background: #2c2c2e;
+      color: #f5f5f7;
+    }
+    
+    .toggle-switch {
+      position: relative;
+      width: 42px;
+      height: 26px;
+      background: #dcdcdc;
+      border-radius: 13px;
+      cursor: pointer;
+      transition: background-color 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      flex-shrink: 0;
+      border: 0.5px solid rgba(0, 0, 0, 0.04);
+      box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+    
+    body.dark-mode .toggle-switch {
+      background: #48484a;
+      border: 0.5px solid rgba(255, 255, 255, 0.1);
+    }
+    
+    .toggle-switch.active {
+      background: #34C759;
+      box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.15);
+    }
+    
+    body.dark-mode .toggle-switch.active {
+      background: #34C759;
+      box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2);
+    }
+    
+    .toggle-slider {
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 22px;
+      height: 22px;
+      background: white;
+      border-radius: 50%;
+      transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15), 
+                  0 0 0 0.5px rgba(0, 0, 0, 0.04);
+    }
+    
+    .toggle-switch.active .toggle-slider {
+      transform: translateX(16px);
+    }
+    
+    .icon-btn-small {
+      background: rgba(120, 120, 128, 0.12);
+      border: 0.5px solid rgba(0, 0, 0, 0.04);
+      color: #1d1d1f;
+      font-size: 11px;
+      width: 26px;
+      height: 26px;
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+      backdrop-filter: blur(10px);
+      flex-shrink: 0;
+    }
+    
+    body.dark-mode .icon-btn-small {
+      background: rgba(120, 120, 128, 0.28);
+      border: 0.5px solid rgba(255, 255, 255, 0.12);
+      color: #f5f5f7;
+    }
+    
+    .icon-btn-small:hover {
+      background: rgba(120, 120, 128, 0.18);
+      transform: scale(1.05);
+    }
+    
+    body.dark-mode .icon-btn-small:hover {
+      background: rgba(120, 120, 128, 0.36);
+    }
+    
+    .icon-btn-small:active {
+      transform: scale(0.95);
+    }
+    
+    .icon-btn-small.spinning {
+      animation: spin 1s linear infinite;
+    }
+    
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    
+    .primary-btn {
+      width: 100%;
+      padding: 14px 24px;
+      background: #007AFF;
+      color: white;
+      border: none;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+      letter-spacing: -0.08px;
+      box-shadow: 0 1px 4px rgba(0, 122, 255, 0.3);
+      border: 0.5px solid rgba(0, 0, 0, 0.04);
+    }
+    
+    body.dark-mode .primary-btn {
+      background: #0A84FF;
+      border: 0.5px solid rgba(10, 132, 255, 0.2);
+      color: #ffffff;
+    }
+    
+    .primary-btn:hover {
+      background: #0051D5;
+      box-shadow: 0 2px 8px rgba(0, 122, 255, 0.4);
+    }
+    
+    body.dark-mode .primary-btn:hover {
+      background: #006EDB;
+    }
+    
+    .primary-btn:active {
+      transform: scale(0.98);
+    }
+    
+    .primary-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+    
+    .status-card {
+      background: rgba(255, 255, 255, 0.6);
+      backdrop-filter: blur(20px);
+      border-radius: 8px;
+      padding: 10px 14px;
+      text-align: center;
+      margin-top: 12px;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      border: 0.5px solid rgba(0, 0, 0, 0.06);
+    }
+    
+    body.dark-mode .status-card {
+      background: rgba(44, 44, 46, 0.75);
+      border: 0.5px solid rgba(255, 255, 255, 0.12);
+    }
+    
+    .status-card.success {
+      background: rgba(52, 199, 89, 0.1);
+      border-color: rgba(52, 199, 89, 0.2);
+    }
+    
+    body.dark-mode .status-card.success {
+      background: rgba(52, 199, 89, 0.18);
+      border-color: rgba(52, 199, 89, 0.35);
+    }
+    
+    .status-card.error {
+      background: rgba(255, 59, 48, 0.1);
+      border-color: rgba(255, 59, 48, 0.2);
+    }
+    
+    body.dark-mode .status-card.error {
+      background: rgba(255, 59, 48, 0.18);
+      border-color: rgba(255, 59, 48, 0.35);
+    }
+    
+    .status-card.warning {
+      background: rgba(255, 149, 0, 0.1);
+      border-color: rgba(255, 149, 0, 0.2);
+    }
+    
+    body.dark-mode .status-card.warning {
+      background: rgba(255, 149, 0, 0.18);
+      border-color: rgba(255, 149, 0, 0.35);
+    }
+    
+    .status-text {
+      font-size: 12px;
+      font-weight: 500;
+      color: #1d1d1f;
+      letter-spacing: -0.06px;
+      transition: color 0.3s ease;
+    }
+    
+    body.dark-mode .status-text {
+      color: #f5f5f7;
+    }
+    
+    .status-card.success .status-text {
+      color: #248A3D;
+    }
+    
+    body.dark-mode .status-card.success .status-text {
+      color: #30D158;
+    }
+    
+    .status-card.error .status-text {
+      color: #D70015;
+    }
+    
+    body.dark-mode .status-card.error .status-text {
+      color: #FF453A;
+    }
+    
+    .status-card.warning .status-text {
+      color: #C93400;
+    }
+    
+    body.dark-mode .status-card.warning .status-text {
+      color: #FF9F0A;
+    }
+    
+    .info-section {
+      background: rgba(255, 255, 255, 0.5);
+      backdrop-filter: blur(20px);
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin-top: 12px;
+      border: 0.5px solid rgba(0, 0, 0, 0.06);
+      transition: background 0.3s ease, border-color 0.3s ease;
+    }
+    
+    body.dark-mode .info-section {
+      background: rgba(44, 44, 46, 0.6);
+      border: 0.5px solid rgba(255, 255, 255, 0.12);
+    }
+    
+    .info-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: #1d1d1f;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      letter-spacing: -0.06px;
+      transition: color 0.3s ease;
+    }
+    
+    body.dark-mode .info-title {
+      color: #f5f5f7;
+    }
+    
+    .info-list {
+      font-size: 11px;
+      color: #86868b;
+      line-height: 1.5;
+      font-weight: 400;
+      transition: color 0.3s ease;
+    }
+    
+    body.dark-mode .info-list {
+      color: #b4b4b9;
+    }
+    
+    .info-list-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin: 4px 0;
+      letter-spacing: -0.05px;
+    }
+    
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: rgba(0, 122, 255, 0.1);
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 10px;
+      font-weight: 600;
+      color: #007AFF;
+      margin-top: 8px;
+      border: 0.5px solid rgba(0, 122, 255, 0.2);
+      letter-spacing: 0.3px;
+      transition: background 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+    }
+    
+    body.dark-mode .badge {
+      background: rgba(10, 132, 255, 0.18);
+      color: #5AB2FF;
+      border: 0.5px solid rgba(10, 132, 255, 0.35);
+    }
+
+    .badge.recommended {
+      background: rgba(52, 199, 89, 0.1);
+      color: #248A3D;
+      border: 0.5px solid rgba(52, 199, 89, 0.2);
+    }
+    
+    body.dark-mode .badge.recommended {
+      background: rgba(52, 199, 89, 0.18);
+      color: #30D158;
+      border: 0.5px solid rgba(52, 199, 89, 0.35);
+    }
+    
+    /* === FIXED TUTORIAL - ONLY OVERLAYS POPUP, NOT ENTIRE SCREEN === */
+    
+    /* Cutout spotlight - ABSOLUTE positioning relative to body */
+    .tutorial-spotlight-cutout {
+      position: absolute; /* Changed from fixed */
+      background: transparent;
+      pointer-events: none;
+      z-index: 10000;
+      border-radius: 10px;
+      box-shadow: 0 0 0 3px #007AFF, 0 0 0 9999px rgba(0, 0, 0, 0.6);
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      animation: pulseGlow 2s ease-in-out infinite;
+      display: none; /* Hidden by default */
+    }
+    
+    body.dark-mode .tutorial-spotlight-cutout {
+      box-shadow: 0 0 0 3px #0A84FF, 0 0 0 9999px rgba(0, 0, 0, 0.75);
+    }
+    
+    @keyframes pulseGlow {
+      0%, 100% {
+        box-shadow: 0 0 0 3px #007AFF, 0 0 20px 3px rgba(0, 122, 255, 0.4), 0 0 0 9999px rgba(0, 0, 0, 0.6);
+      }
+      50% {
+        box-shadow: 0 0 0 3px #007AFF, 0 0 30px 5px rgba(0, 122, 255, 0.6), 0 0 0 9999px rgba(0, 0, 0, 0.6);
+      }
+    }
+    
+    body.dark-mode .tutorial-spotlight-cutout {
+      animation: pulseGlowDark 2s ease-in-out infinite;
+    }
+    
+    @keyframes pulseGlowDark {
+      0%, 100% {
+        box-shadow: 0 0 0 3px #0A84FF, 0 0 25px 3px rgba(10, 132, 255, 0.5), 0 0 0 9999px rgba(0, 0, 0, 0.75);
+      }
+      50% {
+        box-shadow: 0 0 0 3px #0A84FF, 0 0 35px 5px rgba(10, 132, 255, 0.7), 0 0 0 9999px rgba(0, 0, 0, 0.75);
+      }
+    }
+    
+    .tutorial-tooltip {
+      position: absolute; /* Changed from fixed */
+      z-index: 10001;
+      background: rgba(255, 255, 255, 0.98);
+      backdrop-filter: blur(20px) saturate(180%);
+      border-radius: 12px;
+      padding: 14px 16px;
+      max-width: 280px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
+      border: 0.5px solid rgba(0, 0, 0, 0.1);
+      opacity: 0;
+      transform: translateY(10px);
+      transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      pointer-events: all;
+    }
+    
+    body.dark-mode .tutorial-tooltip {
+      background: rgba(44, 44, 46, 0.98);
+      border: 0.5px solid rgba(255, 255, 255, 0.15);
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+    }
+    
+    .tutorial-tooltip.active {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    
+    .tutorial-tooltip-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 4px;
+    }
+    
+    .tutorial-progress {
+      font-size: 11px;
+      font-weight: 600;
+      color: #007AFF;
+      letter-spacing: 0.2px;
+    }
+    
+    body.dark-mode .tutorial-progress {
+      color: #0A84FF;
+    }
+    
+    .tutorial-skip {
+      font-size: 11px;
+      color: #86868b;
+      cursor: pointer;
+      transition: color 0.2s ease;
+      text-decoration: underline;
+    }
+    
+    body.dark-mode .tutorial-skip {
+      color: #b4b4b9;
+    }
+    
+    .tutorial-skip:hover {
+      color: #1d1d1f;
+    }
+    
+    body.dark-mode .tutorial-skip:hover {
+      color: #f5f5f7;
+    }
+    
+    .tutorial-tooltip-text {
+      font-size: 13px;
+      font-weight: 500;
+      color: #1d1d1f;
+      line-height: 1.5;
+      margin-bottom: 12px;
+      letter-spacing: -0.08px;
+    }
+    
+    body.dark-mode .tutorial-tooltip-text {
+      color: #f5f5f7;
+    }
+    
+    .tutorial-buttons {
+      display: flex;
+      gap: 8px;
+    }
+    
+    .tutorial-tooltip-button {
+      flex: 1;
+      padding: 9px 16px;
+      background: #007AFF;
+      color: white;
+      border: none;
+      border-radius: 7px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+      letter-spacing: -0.05px;
+    }
+    
+    body.dark-mode .tutorial-tooltip-button {
+      background: #0A84FF;
+    }
+    
+    .tutorial-tooltip-button:hover {
+      background: #0051D5;
+      transform: scale(1.02);
+    }
+    
+    body.dark-mode .tutorial-tooltip-button:hover {
+      background: #006EDB;
+    }
+    
+    .tutorial-tooltip-button:active {
+      transform: scale(0.98);
+    }
+    
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .card, .status-card, .info-section {
+      animation: fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+      .number-input {
+      width: 56px;
+      padding: 6px 8px;
+      border-radius: 8px;
+      border: 1px solid rgba(0, 0, 0, 0.15);
+      font: inherit;
+      font-size: 13px;
+      text-align: center;
+      background: #fff;
+      color: #1d1d1f;
+    }
+    body.dark-mode .number-input {
+      background: #2c2c2e;
+      color: #f5f5f7;
+      border-color: rgba(255, 255, 255, 0.15);
+    }
+  </style>
+</head>
+<body>
+  <div class="window-bar">
+    <div class="window-title">
+      <span>🎵</span>
+      <span>YT 歌詞（中文版）</span>
+    </div>
+  </div>
+  
+  <div class="content">
+    <div class="section">
+      <div class="section-title">顯示設定</div>
+      <div class="card">
+        <div class="setting-row" id="autoShowRow">
+          <div class="setting-info">
+            <div class="setting-label">自動顯示歌詞</div>
+            <div class="setting-description">所有影片都自動顯示</div>
+          </div>
+          <div class="toggle-switch" id="autoToggle">
+            <div class="toggle-slider"></div>
+          </div>
+        </div>
+        <div class="setting-row" id="smartAutoShowRow">
+          <div class="setting-info">
+            <div class="setting-label">
+              <span>智慧自動顯示</span>
+              <span class="badge recommended" style="margin-left: 6px;">推薦</span>
+            </div>
+            <div class="setting-description">只在音樂影片自動顯示</div>
+          </div>
+          <div class="toggle-switch" id="smartAutoToggle">
+            <div class="toggle-slider"></div>
+          </div>
+        </div>
+        <div class="setting-row" id="darkModeRow">
+          <div class="setting-info">
+            <div class="setting-label">深色模式</div>
+            <div class="setting-description">使用深色主題</div>
+          </div>
+          <div class="setting-controls">
+            <button class="icon-btn-small" id="refreshBtn" title="重新載入外掛">🔄</button>
+            <div class="toggle-switch active" id="darkToggle">
+              <div class="toggle-slider"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">捲動與翻譯</div>
+      <div class="card">
+        <div class="setting-row" id="autoScrollRow">
+          <div class="setting-info">
+            <div class="setting-label">自動捲動歌詞</div>
+            <div class="setting-description">讓目前這一句保持在面板中間</div>
+          </div>
+          <div class="toggle-switch" id="autoScrollToggle">
+            <div class="toggle-slider"></div>
+          </div>
+        </div>
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">手動捲動後暫停</div>
+            <div class="setting-description">自己捲動歌詞後，幾秒後恢復自動捲動</div>
+          </div>
+          <input type="number" class="number-input" id="pauseSeconds" min="0" max="60" step="1">
+        </div>
+        <div class="setting-row" id="translateRow">
+          <div class="setting-info">
+            <div class="setting-label">顯示翻譯</div>
+            <div class="setting-description">每句歌詞下方顯示譯文（歌詞面板的「譯」按鈕也能切換）</div>
+          </div>
+          <div class="toggle-switch" id="translateToggle">
+            <div class="toggle-slider"></div>
+          </div>
+        </div>
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">翻譯成</div>
+            <div class="setting-description">使用 Google 翻譯</div>
+          </div>
+          <div class="language-selector">
+            <select id="targetLangSelect">
+              <option value="zh-TW">繁體中文</option>
+              <option value="zh-CN">簡體中文</option>
+              <option value="en">英文</option>
+              <option value="ja">日文</option>
+              <option value="ko">韓文</option>
+              <option value="es">西班牙文</option>
+              <option value="fr">法文</option>
+              <option value="de">德文</option>
+              <option value="th">泰文</option>
+              <option value="vi">越南文</option>
+              <option value="id">印尼文</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="section">
+      <div class="section-title">操作</div>
+      <button class="primary-btn" id="showLyricsBtn">
+        🔍 立即顯示歌詞
+      </button>
+    </div>
+    
+    <div id="statusContainer"></div>
+  </div>
+
+  <!-- 第一次使用的導覽提示 -->
+  <div class="tutorial-spotlight-cutout" id="tutorialSpotlight"></div>
+  <div class="tutorial-tooltip" id="tutorialTooltip">
+    <div class="tutorial-tooltip-header">
+      <div class="tutorial-progress" id="tutorialProgress">1/3</div>
+      <div class="tutorial-skip" id="tutorialSkip">略過導覽</div>
+    </div>
+    <div class="tutorial-tooltip-text" id="tutorialText"></div>
+    <div class="tutorial-buttons">
+      <button class="tutorial-tooltip-button" id="tutorialButton"></button>
+    </div>
+  </div>
+
+  <script src="locales.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

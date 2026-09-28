@@ -1,0 +1,45 @@
+{
+  "action": {
+    "default_icon": {
+      "128": "icon128.png",
+      "16": "icon16.png",
+      "48": "icon48.png"
+    },
+    "default_popup": "popup.html",
+    "default_title": "YT 歌詞設定"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "js": [
+        "content.js"
+      ],
+      "matches": [
+        "*://*.youtube.com/*"
+      ],
+      "run_at": "document_end"
+    }
+  ],
+  "description": "在 YouTube 顯示即時同步歌詞，自動捲動並附上逐句翻譯。",
+  "host_permissions": [
+    "https://www.youtube.com/*",
+    "https://lrclib.net/*",
+    "https://api.lyrics.ovh/*",
+    "https://translate.googleapis.com/*"
+  ],
+  "icons": {
+    "128": "icon128.png",
+    "16": "icon16.png",
+    "48": "icon48.png"
+  },
+  "manifest_version": 3,
+  "name": "YT 歌詞（中文版）",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "version": "1.0.9.1"
+}

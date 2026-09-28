@@ -1,0 +1,25 @@
+# 金鑰與密碼
+config.json
+.env
+.env.*
+*.key
+*.pem
+*.pfx
+*.p12
+*secret*
+*password*
+*credential*
+*apikey*
+*api_key*
+# 紀錄與暫存
+history.json
+*.log
+*.tmp
+dist/
+node_modules/
+*.zip
+.commit-message.txt
+*.bundle
+# 原版外掛的參考副本（不上傳）
+1.0.9_0/
+original/
