@@ -745,7 +745,7 @@
     <div class="section">
       <div class="section-title">顯示設定</div>
       <div class="card">
-        <div class="setting-row" id="autoShowRow">
+        <div class="setting-row" id="autoShowRow" style="display: none;">
           <div class="setting-info">
             <div class="setting-label">自動顯示歌詞</div>
             <div class="setting-description">所有影片都自動顯示</div>
@@ -754,7 +754,7 @@
             <div class="toggle-slider"></div>
           </div>
         </div>
-        <div class="setting-row" id="smartAutoShowRow">
+        <div class="setting-row" id="smartAutoShowRow" style="display: none;">
           <div class="setting-info">
             <div class="setting-label">
               <span>智慧自動顯示</span>
@@ -933,7 +933,7 @@
         <div class="setting-row">
           <div class="setting-info">
             <div class="setting-label">打點</div>
-            <div class="setting-description">每句開始唱時按的鍵</div>
+            <div class="setting-description">每句開始唱時按住、唱完放開的鍵</div>
           </div>
           <button class="key-btn" id="tapKeyBtn" data-key="tapKey">Enter</button>
         </div>
@@ -958,6 +958,13 @@
           <div class="toggle-switch" id="ytCaptionsToggle">
             <div class="toggle-slider"></div>
           </div>
+        </div>
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">我的歌詞庫</div>
+            <div class="setting-description">管理自己做的同步歌詞；匯出給朋友、匯入朋友傳來的歌詞</div>
+          </div>
+          <button class="key-btn" id="openLibraryBtn">📚 打開</button>
         </div>
       </div>
     </div>

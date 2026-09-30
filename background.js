@@ -2,7 +2,32 @@
 // （中文版已移除原本的使用數據追蹤，不會再把使用紀錄傳到外部伺服器）
 'use strict';
 
+importScripts('library-core.js');
+
+// 安裝包裡附的歌詞（bundled-lyrics.json，由「打包給朋友.bat」放入）：安裝或更新時匯入歌詞庫
+async function ylpImportBundled() {
+  let text;
+  try {
+    const r = await fetch(chrome.runtime.getURL('bundled-lyrics.json'));
+    if (!r.ok) return;
+    text = await r.text();
+  } catch (e) { return; } // 沒有附歌詞
+  try {
+    const { songs, exported } = ylpLibParseFile(text, 'bundled-lyrics.json');
+    const mark = exported + ':' + songs.length;
+    const prev = (await chrome.storage.local.get('ylpBundledMark')).ylpBundledMark;
+    if (prev === mark) return; // 這份已經匯入過
+    const stats = await ylpLibMerge(songs, 'bundled');
+    await chrome.storage.local.set({ ylpBundledMark: mark });
+    console.log('[歌詞庫] 安裝包歌詞：' + ylpLibStatsText(stats));
+  } catch (e) {
+    console.warn('[歌詞庫] 安裝包歌詞讀取失敗：', e.message);
+  }
+}
+chrome.runtime.onStartup.addListener(() => { ylpImportBundled(); });
+
 chrome.runtime.onInstalled.addListener((details) => {
+  ylpImportBundled();
   if (details.reason !== 'install') return;
   chrome.storage.sync.set({
     autoShowLyrics: false,  // 所有影片都自動顯示：預設關
@@ -22,6 +47,12 @@ const ALLOWED_LANGS = new Set(['zh-TW', 'zh-CN', 'en', 'ja', 'ko', 'es', 'fr', '
 const MAX_URL_Q = 1800; // 每次請求的文字長度上限（編碼後）
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  // 歌詞面板上的「📚 歌詞庫」：開新分頁顯示歌詞庫
+  if (request && request.action === 'ylpOpenLibrary' && sender.id === chrome.runtime.id) {
+    chrome.tabs.create({ url: chrome.runtime.getURL('library.html') });
+    sendResponse({ ok: true });
+    return;
+  }
   if (!request || request.action !== 'ylpTranslate') {
     sendResponse({ success: true });
     return;

@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>我的歌詞庫 - YT 歌詞（中文版）</title>
+  <link rel="icon" href="icon32.png">
+  <style>
+    :root {
+      --bg: #f5f5f7; --card: #ffffff; --text: #1d1d1f; --sub: #6e6e73; --line: rgba(0,0,0,0.08);
+      --accent: #0a84ff; --accent-text: #ffffff; --danger: #d70015; --hover: rgba(0,0,0,0.04); --chip: rgba(0,0,0,0.06);
+      --ok: #1f8a3b; --warn-bg: rgba(255,159,10,0.14);
+    }
+    body.dark {
+      --bg: #1c1c1e; --card: #2c2c2e; --text: #f5f5f7; --sub: #98989d; --line: rgba(255,255,255,0.1);
+      --danger: #ff453a; --hover: rgba(255,255,255,0.05); --chip: rgba(255,255,255,0.1); --ok: #30d158;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: var(--text);
+      font-family: -apple-system, 'Segoe UI', 'Microsoft JhengHei', 'Noto Sans TC', system-ui, sans-serif; font-size: 14px;
+    }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 28px 20px 60px; }
+    header { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+    header img { width: 44px; height: 44px; }
+    h1 { font-size: 22px; margin: 0; }
+    .count { color: var(--sub); font-size: 13px; margin-top: 2px; }
+    .grow { flex: 1; }
+    .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 20px 0 12px; }
+    .search {
+      flex: 1; min-width: 200px; height: 36px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line);
+      background: var(--card); color: var(--text); font: inherit;
+    }
+    button {
+      height: 36px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--line); cursor: pointer;
+      background: var(--card); color: var(--text); font: inherit; font-weight: 600; white-space: nowrap;
+    }
+    button:hover { background: var(--hover); }
+    button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+    button.primary:hover { filter: brightness(1.08); }
+    button:disabled { opacity: 0.45; cursor: default; }
+    button.small { height: 28px; padding: 0 10px; font-size: 12px; border-radius: 8px; }
+    button.danger { color: var(--danger); }
+    .msg { min-height: 20px; font-size: 13px; margin: 4px 0 10px; }
+    .msg.ok { color: var(--ok); }
+    .msg.err { color: var(--danger); }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+    th { font-size: 12px; color: var(--sub); font-weight: 600; background: var(--hover); }
+    tr:last-child td { border-bottom: 0; }
+    tbody tr:hover { background: var(--hover); }
+    td.song { font-weight: 600; }
+    td.song .artist { font-weight: 400; color: var(--sub); font-size: 13px; margin-top: 2px; }
+    td.video a { color: var(--accent); text-decoration: none; }
+    td.video a:hover { text-decoration: underline; }
+    td.video .vt { color: var(--sub); font-size: 12px; margin-top: 2px; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    td.num { white-space: nowrap; color: var(--sub); font-size: 13px; }
+    .chip { display: inline-block; padding: 2px 8px; border-radius: 999px; background: var(--chip); font-size: 12px; white-space: nowrap; }
+    .chip.mine { background: rgba(10,132,255,0.15); color: var(--accent); }
+    .actions { display: flex; gap: 6px; justify-content: flex-end; }
+    td input[type=text] {
+      width: 100%; height: 30px; padding: 0 8px; border-radius: 8px; border: 1px solid var(--line);
+      background: var(--bg); color: var(--text); font: inherit; margin: 2px 0;
+    }
+    input[type=checkbox] { width: 16px; height: 16px; cursor: pointer; }
+    .empty { padding: 48px 20px; text-align: center; color: var(--sub); line-height: 1.8; }
+    .help { margin-top: 24px; padding: 16px 18px; border-radius: 14px; background: var(--card); border: 1px solid var(--line); line-height: 1.8; color: var(--sub); font-size: 13px; }
+    .help b { color: var(--text); }
+    .help h2 { font-size: 15px; margin: 0 0 6px; color: var(--text); }
+    .help ol { margin: 4px 0 10px; padding-left: 20px; }
+    @media (max-width: 720px) {
+      th.hide-sm, td.hide-sm { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <img src="icon128.png" alt="">
+      <div>
+        <h1>我的歌詞庫</h1>
+        <div class="count" id="count">讀取中…</div>
+      </div>
+    </header>
+
+    <div class="toolbar">
+      <input class="search" id="search" type="search" placeholder="搜尋歌名、歌手或影片標題" autocomplete="off">
+      <button class="primary" id="importBtn">📂 匯入</button>
+      <button id="exportAllBtn">⬆ 全部匯出</button>
+      <button id="exportSelBtn" disabled>⬆ 匯出勾選的</button>
+      <button id="deleteSelBtn" class="danger" disabled>🗑 刪除勾選的</button>
+      <input type="file" id="fileInput" accept=".json,.lrc,.txt,application/json,text/plain" multiple hidden>
+    </div>
+    <div class="msg" id="msg"></div>
+
+    <div class="card">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:36px"><input type="checkbox" id="checkAll" title="全選"></th>
+            <th>歌名／歌手</th>
+            <th class="hide-sm">影片</th>
+            <th class="hide-sm">句數</th>
+            <th>時間微調</th>
+            <th class="hide-sm">來源</th>
+            <th class="hide-sm">更新日期</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="list"></tbody>
+      </table>
+      <div class="empty" id="empty" hidden></div>
+    </div>
+
+    <div class="help">
+      <h2>分享給朋友</h2>
+      <ol>
+        <li>按「⬆ 全部匯出」（或勾選幾首後按「⬆ 匯出勾選的」），會下載一個 <b>yt-lyrics-library-日期.json</b> 檔案。</li>
+        <li>把這個檔案用 LINE、雲端硬碟等方式傳給朋友。</li>
+        <li>朋友按外掛圖示 →「📚 我的歌詞庫」→「📂 匯入」，選這個檔案就完成了。可以一次選好幾個檔案，也可以匯入單首的 .lrc 檔。</li>
+      </ol>
+      <b>重複匯入沒關係</b>：已經有的歌會自動略過，只有你之後重新做過、比較新的版本才會更新。朋友自己做的歌不會被覆蓋。<br>
+      <b>時間微調會一起帶過去</b>：匯出時會把你調好的時間直接算進歌詞，朋友不用再調。<br>
+      <b>放進安裝包</b>：先在這裡「全部匯出」，再雙擊外掛資料夾裡的「打包給朋友.bat」，它會自動找到下載資料夾裡最新的歌詞庫檔並問你要不要一起放進去；朋友安裝或更新外掛時就會自動拿到這些歌。<br>
+      <b>不同影片也能用</b>：朋友看的是同一首歌的另一部影片（例如 MV 和官方音訊版）時，也會自動套用這裡的歌詞，但前奏長度不同時需要用 + / − 微調時間。
+    </div>
+  </div>
+  <script src="library-core.js"></script>
+  <script src="library.js"></script>
+</body>
+</html>

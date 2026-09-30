@@ -760,3 +760,17 @@ document.addEventListener('keydown', (e) => {
   chrome.storage.sync.set({ [key]: e.code });
   reset();
 });
+
+// === 歌詞庫 ===
+document.getElementById('openLibraryBtn').addEventListener('click', () => {
+  chrome.tabs.create({ url: chrome.runtime.getURL('library.html') });
+  window.close();
+});
+
+// === 點外掛圖示時顯示歌詞 ===
+// 打開這個設定視窗的同時，如果目前分頁是 YouTube 影片、而且歌詞面板還沒開，就把歌詞面板打開
+chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+  const tab = tabs && tabs[0];
+  if (!tab || !/^https:\/\/(www\.|m\.)?youtube\.com\/watch/.test(tab.url || '')) return;
+  chrome.tabs.sendMessage(tab.id, { action: 'ylpShowIfClosed' }, () => void chrome.runtime.lastError);
+});

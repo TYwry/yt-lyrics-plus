@@ -10,7 +10,7 @@ if "%VER%"=="" ( echo 讀不到 manifest.json 的版本號。& pause & exit /b 1
 set "OUT=yt-lyrics-plus.zip"
 set "STAGE=%TEMP%\ylp-pack-%RANDOM%"
 mkdir "%STAGE%\YT-Lyrics" || ( echo 無法建立暫存資料夾。& pause & exit /b 1 )
-for %%f in (manifest.json content.js page-bridge.js themes.js background.js locales.js popup.html popup.js icon16.png icon32.png icon48.png icon128.png README-FIRST.txt open-install-page.bat) do (
+for %%f in (manifest.json content.js page-bridge.js themes.js background.js library-core.js library.html library.js locales.js popup.html popup.js icon16.png icon32.png icon48.png icon128.png README-FIRST.txt open-install-page.bat) do (
   if not exist "%%f" ( echo 缺少檔案：%%f & rmdir /s /q "%STAGE%" & pause & exit /b 1 )
   copy /y "%%f" "%STAGE%\YT-Lyrics\" >nul
 )

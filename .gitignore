@@ -23,3 +23,6 @@ node_modules/
 # 原版外掛的參考副本（不上傳）
 1.0.9_0/
 original/
+# 歌詞庫匯出檔（個人歌詞資料）
+yt-lyrics-library-*.json
+bundled-lyrics.json
