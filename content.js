@@ -193,6 +193,97 @@ function ylpSetupHeaderSearch(panel) {
   });
 }
 
+// ---------- 縮成一個小圓點 ----------
+var ylpDotMode = false;
+var ylpDotPos = null; // { left, top }
+
+function ylpDotEl() {
+  let dot = document.getElementById('ylp-dot');
+  if (dot) return dot;
+  dot = document.createElement('div');
+  dot.id = 'ylp-dot';
+  dot.title = '點一下展開歌詞（可以拖曳移動）';
+  dot.setAttribute('role', 'button');
+  dot.innerHTML = '<span class="ylp-dot-eq"><i></i><i></i><i></i></span>';
+  let sx = 0, sy = 0, sl = 0, st = 0, moved = false, down = false;
+  dot.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    down = true; moved = false;
+    sx = e.clientX; sy = e.clientY;
+    const r = dot.getBoundingClientRect();
+    sl = r.left; st = r.top;
+    try { dot.setPointerCapture(e.pointerId); } catch (err) { /* 忽略 */ }
+  });
+  dot.addEventListener('pointermove', (e) => {
+    if (!down) return;
+    const dx = e.clientX - sx, dy = e.clientY - sy;
+    if (!moved && Math.hypot(dx, dy) < 5) return; // 移動很少＝點一下
+    moved = true;
+    ylpPlaceDot(sl + dx, st + dy);
+  });
+  const up = () => {
+    if (!down) return;
+    down = false;
+    if (!moved) ylpExitDot(true);
+  };
+  dot.addEventListener('pointerup', up);
+  dot.addEventListener('pointercancel', () => { down = false; });
+  document.body.appendChild(dot);
+  return dot;
+}
+
+function ylpPlaceDot(left, top) {
+  const dot = document.getElementById('ylp-dot');
+  if (!dot) return;
+  const size = 44;
+  left = Math.max(4, Math.min(window.innerWidth - size - 4, left));
+  top = Math.max(4, Math.min(window.innerHeight - size - 4, top));
+  dot.style.left = left + 'px';
+  dot.style.top = top + 'px';
+  ylpDotPos = { left, top };
+}
+
+function ylpEnterDot() {
+  const panel = document.getElementById('lyrics-extension-panel');
+  if (!panel) return;
+  const r = panel.getBoundingClientRect();
+  ylpDotMode = true;
+  panel.classList.add('ylp-dotted');
+  ylpDotEl();
+  // 圓點出現在面板右上角的位置
+  if (ylpDotPos) ylpPlaceDot(ylpDotPos.left, ylpDotPos.top);
+  else ylpPlaceDot(r.right - 44, r.top);
+}
+
+// expand＝true：展開成一般的完整歌詞面板
+function ylpExitDot(expand) {
+  const dot = document.getElementById('ylp-dot');
+  const wasDot = ylpDotMode;
+  ylpDotMode = false;
+  if (dot) dot.remove();
+  if (!expand || !wasDot) return;
+  const panel = document.getElementById('lyrics-extension-panel');
+  if (!panel) {
+    if (/[?&]v=/.test(location.search)) detectAndShowLyrics();
+    return;
+  }
+  panel.classList.remove('ylp-dotted');
+  if (isMinimized) document.getElementById('minimize-btn')?.click(); // 展開成完整歌詞
+  // 面板的右上角對齊圓點，並確保整個面板在畫面內
+  if (ylpDotPos) {
+    const w = panel.offsetWidth || 380;
+    const left = Math.max(0, Math.min(window.innerWidth - w, ylpDotPos.left + 44 - w));
+    const top = Math.max(0, Math.min(window.innerHeight - 120, ylpDotPos.top));
+    panel.style.left = left + 'px';
+    panel.style.top = top + 'px';
+    panel.style.right = 'auto';
+  }
+  ylpSyncDirty = true;
+  ylpLastScrolledIndex = -1;
+}
+
 // ---------- 調整面板大小（字跟著縮放） ----------
 const YLP_PANEL_BASE_W = 380;
 
@@ -419,6 +510,20 @@ function ylpApplyTheme() {
     ${P} .ylp-other-video { margin-top: 6px; padding: 6px 8px; border-radius: 6px; font-size: 11px; line-height: 1.5; background: rgba(255, 159, 10, 0.15); color: ${light ? '#8a4b00' : '#ffcc80'}; }
     ${P} .ylp-confirm label { display: block; margin: 8px 0 4px; font-size: 12px; opacity: 0.8; }
     ${P} .ylp-confirm .ylp-confirm-video { margin-top: 8px; font-size: 12px; opacity: 0.7; word-break: break-all; }
+    ${P}.ylp-dotted { display: none !important; }
+    #ylp-dot {
+      position: fixed; z-index: 999999; width: 44px; height: 44px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center; cursor: pointer; touch-action: none; user-select: none;
+      background: radial-gradient(circle at 30% 30%, ${ylpRgba(A, 1)}, ${ylpRgba(A, 0.75)});
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35), 0 0 0 3px ${ylpRgba(A, 0.25)};
+      transition: transform 0.15s, box-shadow 0.15s;
+    }
+    #ylp-dot:hover { transform: scale(1.1); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4), 0 0 0 5px ${ylpRgba(A, 0.3)}; }
+    #ylp-dot .ylp-dot-eq { display: flex; align-items: flex-end; gap: 2px; height: 16px; }
+    #ylp-dot .ylp-dot-eq i { width: 3px; height: 40%; border-radius: 2px; background: ${onAccent}; animation: ylp-eq 1.1s ease-in-out infinite; }
+    #ylp-dot .ylp-dot-eq i:nth-child(2) { animation-delay: -0.6s; }
+    #ylp-dot .ylp-dot-eq i:nth-child(3) { animation-delay: -0.3s; }
+    #ylp-dot.paused .ylp-dot-eq i { animation-play-state: paused; }
     ${P} .ylp-loading-head { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 4px 0 18px; }
     ${P} .ylp-eq { display: flex; align-items: flex-end; gap: 3px; height: 22px; }
     ${P} .ylp-eq span { width: 4px; height: 30%; border-radius: 2px; background: ${A}; animation: ylp-eq 1s ease-in-out infinite; }
@@ -437,7 +542,7 @@ function ylpApplyTheme() {
     @keyframes ylp-dot { 0%, 100% { opacity: 0.2; } 40% { opacity: 1; } }
     @keyframes ylp-box-pulse { 0%, 100% { background: ${ylpRgba(A, 0.12)}; } 50% { background: ${ylpRgba(A, 0.55)}; } }
     @media (prefers-reduced-motion: reduce) {
-      ${P} .ylp-eq span, ${P} .ylp-dots i, ${P} .progress-box-current { animation: none; }
+      ${P} .ylp-eq span, ${P} .ylp-dots i, ${P} .progress-box-current, #ylp-dot .ylp-dot-eq i { animation: none; }
     }
     ${P} .ylp-search-bar { display: flex; gap: 6px; padding: 8px 12px; flex-shrink: 0; border-bottom: 1px solid ${ylpRgba(T, 0.12)}; }
     ${P} .ylp-search-bar[hidden] { display: none; }
@@ -3458,6 +3563,9 @@ function createLyricsPanel() {
         <button class="lyrics-btn ylp-translate-btn" id="translate-btn" title="顯示／隱藏翻譯">
           <span style="font-size: 13px; line-height: 1;">譯</span>
         </button>
+        <button class="lyrics-btn" id="ylp-dot-btn" title="縮成一個小圓點（點圓點就會展開）">
+          <span style="font-size: 9px; line-height: 1;">●</span>
+        </button>
         <button class="lyrics-btn" id="minimize-btn" title="縮小">
           <span style="font-size: 16px; line-height: 1;">−</span>
         </button>
@@ -3484,6 +3592,7 @@ function createLyricsPanel() {
     panel.classList.add('minimized');
     isMinimized = true;
   }
+  if (ylpDotMode) panel.classList.add('ylp-dotted'); // 換歌時維持小圓點
   ylpPanelHover = false;
   ylpApplyMiniTransparency();
   
@@ -3495,6 +3604,7 @@ function createLyricsPanel() {
     ylpStopTap();
     panel.remove();
     lyricsPanel = null;
+    ylpExitDot(false);
     ylpCcRender(true); // 關掉面板時，影片上的字幕也一起收起來
   });
   
@@ -3534,6 +3644,7 @@ function createLyricsPanel() {
   document.getElementById('karaoke-btn').addEventListener('click', () => ylpKaraokeToggle());
   document.getElementById('edit-btn').addEventListener('click', () => ylpOpenEditor());
   ylpSetupHeaderSearch(panel);
+  document.getElementById('ylp-dot-btn').addEventListener('click', () => ylpEnterDot());
   ylpSetupResize(panel);
   document.getElementById('ylp-cc-btn').addEventListener('click', () => {
     chrome.storage.sync.set({ ccSubs: !ylpSettings.ccSubs });
@@ -4091,6 +4202,7 @@ function updateLyricsHighlight() {
   const video = document.querySelector('video');
   if (!video || !currentSyncedLines.length) return;
   
+  if (ylpDotMode) { const d = document.getElementById('ylp-dot'); if (d) d.classList.toggle('paused', video.paused); }
   const currentTime = ylpLyricTime(video);
   
   // 二分搜尋：找最後一句「時間 <= 現在」的歌詞
@@ -4271,7 +4383,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   
   // 點工具列上的外掛圖示（打開設定視窗）時：歌詞面板還沒開就打開
   if (request.action === 'ylpShowIfClosed') {
-    if (!lyricsPanel && /[?&]v=/.test(location.search)) detectAndShowLyrics();
+    if (ylpDotMode) ylpExitDot(true);
+    else if (!lyricsPanel && /[?&]v=/.test(location.search)) detectAndShowLyrics();
     sendResponse({ success: true, opened: true });
   }
 
