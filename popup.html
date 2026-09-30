@@ -14,7 +14,9 @@
       font-family: 'Microsoft JhengHei', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       background: #f5f5f7;
       color: #1d1d1f;
-      overflow: hidden;
+      /* 設定變多後超過 Chrome 彈出視窗的高度上限（600px），改成可以上下捲動 */
+      overflow-x: hidden;
+      overflow-y: auto;
       transition: background 0.3s ease, color 0.3s ease;
       position: relative; /* CRITICAL: Contains tutorial overlay */
     }
@@ -707,6 +709,28 @@
       color: #f5f5f7;
       border-color: rgba(255, 255, 255, 0.15);
     }
+    .setting-row.block { display: block; }
+    .value-tag { font-size: 11px; color: #86868b; margin-left: 4px; }
+    .range { width: 100%; margin-top: 8px; accent-color: #34C759; }
+    .theme-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 10px; }
+    .theme-swatch {
+      position: relative; height: 40px; border-radius: 10px; cursor: pointer;
+      border: 2px solid transparent; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.12);
+      display: flex; align-items: flex-end; justify-content: flex-start; padding: 4px 6px;
+      font: inherit; font-size: 10px; font-weight: 600; text-align: left;
+    }
+    .theme-swatch.selected { border-color: #34C759; }
+    .k-swatch { background: #141414; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; height: 46px; }
+    .k-swatch .k-sample { font-size: 12px; font-weight: 800; white-space: nowrap; }
+    .k-swatch .k-name { font-size: 10px; font-weight: 600; color: rgba(255,255,255,0.7); }
+    .color-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 10px; }
+    .color-grid label { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 12px; padding: 4px 8px; border-radius: 8px; background: rgba(120,120,128,0.12); }
+    .color-grid input[type=color] { width: 34px; height: 24px; border: none; padding: 0; background: none; cursor: pointer; }
+    .key-btn {
+      min-width: 92px; padding: 6px 10px; border-radius: 8px; cursor: pointer; font: inherit; font-size: 12px; font-weight: 600;
+      border: 1px solid rgba(120,120,128,0.35); background: rgba(120,120,128,0.12); color: inherit;
+    }
+    .key-btn.waiting { border-color: #34C759; color: #34C759; }
   </style>
 </head>
 <body>
@@ -744,13 +768,100 @@
         </div>
         <div class="setting-row" id="darkModeRow">
           <div class="setting-info">
-            <div class="setting-label">深色模式</div>
-            <div class="setting-description">使用深色主題</div>
+            <div class="setting-label">重新載入外掛</div>
+            <div class="setting-description">歌詞面板出問題時按一下</div>
           </div>
           <div class="setting-controls">
             <button class="icon-btn-small" id="refreshBtn" title="重新載入外掛">🔄</button>
-            <div class="toggle-switch active" id="darkToggle">
+            <!-- 深色模式改由「主題」自動決定，這個開關保留但不顯示 -->
+            <div class="toggle-switch active" id="darkToggle" style="display: none;">
               <div class="toggle-slider"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">外觀</div>
+      <div class="card">
+        <div class="setting-row block">
+          <div class="setting-info">
+            <div class="setting-label">主題 <span id="themeName" class="value-tag"></span></div>
+            <div class="setting-description">歌詞面板的配色，點一下就套用</div>
+            <div class="theme-grid" id="themeGrid"></div>
+          </div>
+        </div>
+        <div class="setting-row block" id="customThemeRow" style="display: none;">
+          <div class="setting-info">
+            <div class="setting-label">自訂顏色</div>
+            <div class="setting-description">兩個背景色不同時會變成漸層</div>
+            <div class="color-grid">
+              <label>背景 1<input type="color" id="customBg1"></label>
+              <label>背景 2<input type="color" id="customBg2"></label>
+              <label>文字<input type="color" id="customText"></label>
+              <label>強調色<input type="color" id="customAccent"></label>
+            </div>
+          </div>
+        </div>
+        <div class="setting-row block">
+          <div class="setting-info">
+            <div class="setting-label">歌詞背景透明度 <span id="panelTransparencyValue" class="value-tag">0%</span></div>
+            <div class="setting-description">展開時歌詞面板背景的透明程度，文字不受影響</div>
+            <input type="range" id="panelTransparency" min="0" max="90" step="5" class="range">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">卡拉OK與影片字幕</div>
+      <div class="card">
+        <div class="setting-row" id="ccRow">
+          <div class="setting-info">
+            <div class="setting-label">影片字幕（類似 CC）</div>
+            <div class="setting-description">把目前這一句歌詞和翻譯顯示在影片中下方，大小跟著影片縮放（歌詞面板的「CC」按鈕也能切換）</div>
+          </div>
+          <div class="toggle-switch" id="ccToggle">
+            <div class="toggle-slider"></div>
+          </div>
+        </div>
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">影片字幕大小</div>
+            <div class="setting-description">依影片畫面的高度自動換算</div>
+          </div>
+          <div class="language-selector">
+            <select id="ccSizeSelect">
+              <option value="s">小</option>
+              <option value="m">中</option>
+              <option value="l">大</option>
+            </select>
+          </div>
+        </div>
+        <div class="setting-row" id="karaokeWipeRow">
+          <div class="setting-info">
+            <div class="setting-label">卡拉OK填色動畫</div>
+            <div class="setting-description">卡拉OK模式中，字幕從左到右慢慢變色；關閉＝無動畫模式，只顯示字幕</div>
+          </div>
+          <div class="toggle-switch" id="karaokeWipeToggle">
+            <div class="toggle-slider"></div>
+          </div>
+        </div>
+        <div class="setting-row block">
+          <div class="setting-info">
+            <div class="setting-label">字幕顏色 <span id="karaokeThemeName" class="value-tag"></span></div>
+            <div class="setting-description">卡拉OK字幕與影片字幕共用：白字是還沒唱到的字，彩色是填色動畫</div>
+            <div class="theme-grid" id="karaokeGrid"></div>
+          </div>
+        </div>
+        <div class="setting-row block" id="karaokeCustomRow" style="display: none;">
+          <div class="setting-info">
+            <div class="setting-label">自訂字幕顏色</div>
+            <div class="color-grid">
+              <label>文字<input type="color" id="karaokeText"></label>
+              <label>填色動畫<input type="color" id="karaokeFill"></label>
+              <label>翻譯<input type="color" id="karaokeTr"></label>
             </div>
           </div>
         </div>
@@ -785,6 +896,13 @@
             <div class="toggle-slider"></div>
           </div>
         </div>
+        <div class="setting-row" id="miniTransparencyRow">
+          <div class="setting-info">
+            <div class="setting-label">縮小列透明度 <span id="miniTransparencyValue">0%</span></div>
+            <div class="setting-description">歌詞面板縮小後的透明程度，滑鼠移上去會恢復</div>
+            <input type="range" id="miniTransparency" min="0" max="90" step="5" class="range">
+          </div>
+        </div>
         <div class="setting-row">
           <div class="setting-info">
             <div class="setting-label">翻譯成</div>
@@ -810,6 +928,41 @@
     </div>
     
     <div class="section">
+      <div class="section-title">打點按鍵</div>
+      <div class="card">
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">打點</div>
+            <div class="setting-description">每句開始唱時按的鍵</div>
+          </div>
+          <button class="key-btn" id="tapKeyBtn" data-key="tapKey">Enter</button>
+        </div>
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">退回上一句</div>
+            <div class="setting-description">按錯時重打上一句（Esc 固定為取消）</div>
+          </div>
+          <button class="key-btn" id="undoKeyBtn" data-key="undoKey">Backspace</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">歌詞來源</div>
+      <div class="card">
+        <div class="setting-row" id="ytCaptionsRow">
+          <div class="setting-info">
+            <div class="setting-label">使用 YouTube 字幕</div>
+            <div class="setting-description">歌詞資料庫沒有同步歌詞時，改用影片本身的 CC 字幕</div>
+          </div>
+          <div class="toggle-switch" id="ytCaptionsToggle">
+            <div class="toggle-slider"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
       <div class="section-title">操作</div>
       <button class="primary-btn" id="showLyricsBtn">
         🔍 立即顯示歌詞
@@ -832,6 +985,7 @@
     </div>
   </div>
 
+  <script src="themes.js"></script>
   <script src="locales.js"></script>
   <script src="popup.js"></script>
 </body>

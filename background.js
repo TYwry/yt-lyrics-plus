@@ -12,6 +12,9 @@ chrome.runtime.onInstalled.addListener((details) => {
     pauseSeconds: 4,
     translate: true,
     targetLang: 'zh-TW',
+    karaokeWipe: true,
+    useYouTubeCaptions: true,
+    miniTransparency: 0,
   });
 });
 

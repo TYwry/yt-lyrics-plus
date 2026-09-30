@@ -459,7 +459,7 @@ document.getElementById('showLyricsBtn').addEventListener('click', async () => {
     try {
       await chrome.scripting.executeScript({
         target: { tabId: tab.id },
-        files: ['content.js']
+        files: ['themes.js', 'content.js']
       });
       console.log('✅ Content script injected');
       await new Promise(resolve => setTimeout(resolve, 1000));
@@ -519,22 +519,27 @@ function showStatus(message, type = 'success') {
   const statusContainer = document.getElementById('statusContainer');
   statusContainer.innerHTML = `
     <div class="status-card ${type}">
-      <div class="status-text">${message}</div>
+      <div class="status-text"></div>
     </div>
   `;
+  statusContainer.querySelector('.status-text').textContent = message; // 用純文字顯示，避免插入網頁程式碼
 }
 
 // === 捲動與翻譯設定 ===
-const YLP_DEFAULTS = { autoScroll: true, pauseSeconds: 4, translate: true, targetLang: 'zh-TW' };
+const YLP_DEFAULTS = { autoScroll: true, pauseSeconds: 4, translate: true, targetLang: 'zh-TW', karaokeWipe: true, useYouTubeCaptions: true, miniTransparency: 0, tapKey: 'Enter', undoKey: 'Backspace', ...YLP_THEME_DEFAULTS };
 
 chrome.storage.sync.get(YLP_DEFAULTS, (s) => {
   document.getElementById('autoScrollToggle').classList.toggle('active', s.autoScroll !== false);
   document.getElementById('translateToggle').classList.toggle('active', s.translate !== false);
+  document.getElementById('karaokeWipeToggle').classList.toggle('active', s.karaokeWipe !== false);
+  document.getElementById('ytCaptionsToggle').classList.toggle('active', s.useYouTubeCaptions !== false);
+  document.getElementById('miniTransparency').value = s.miniTransparency;
+  document.getElementById('miniTransparencyValue').textContent = s.miniTransparency + '%';
   document.getElementById('pauseSeconds').value = s.pauseSeconds;
   document.getElementById('targetLangSelect').value = s.targetLang;
 });
 
-for (const [id, key] of [['autoScrollToggle', 'autoScroll'], ['translateToggle', 'translate']]) {
+for (const [id, key] of [['autoScrollToggle', 'autoScroll'], ['translateToggle', 'translate'], ['karaokeWipeToggle', 'karaokeWipe'], ['ytCaptionsToggle', 'useYouTubeCaptions']]) {
   document.getElementById(id).addEventListener('click', function () {
     const on = !this.classList.contains('active');
     this.classList.toggle('active', on);
@@ -548,6 +553,18 @@ document.getElementById('pauseSeconds').addEventListener('change', function () {
   chrome.storage.sync.set({ pauseSeconds: n });
 });
 
+document.getElementById('miniTransparency').addEventListener('input', function () {
+  const n = Math.min(90, Math.max(0, parseInt(this.value, 10) || 0));
+  document.getElementById('miniTransparencyValue').textContent = n + '%';
+  // 拖動中：只即時預覽目前分頁，不寫入設定
+  ylpPreview({ miniTransparency: n });
+});
+// 放開滑桿時才儲存（Chrome 同步設定每分鐘最多寫入 120 次，拖動時一直寫會被擋下，導致設定失效）
+document.getElementById('miniTransparency').addEventListener('change', function () {
+  const n = Math.min(90, Math.max(0, parseInt(this.value, 10) || 0));
+  chrome.storage.sync.set({ miniTransparency: n });
+});
+
 document.getElementById('targetLangSelect').addEventListener('change', function () {
   chrome.storage.sync.set({ targetLang: this.value });
 });
@@ -557,4 +574,189 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'sync' && 'translate' in changes) {
     document.getElementById('translateToggle').classList.toggle('active', changes.translate.newValue !== false);
   }
+});
+
+
+// === 外觀：主題、自訂顏色、背景透明度 ===
+let ylpPopupSettings = { ...YLP_DEFAULTS };
+
+// 即時預覽到目前分頁（不寫入設定）
+function ylpPreview(values) {
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (tabs && tabs[0]) chrome.tabs.sendMessage(tabs[0].id, { action: 'ylpPreview', values }, () => void chrome.runtime.lastError);
+  });
+}
+
+function ylpRenderThemeGrid() {
+  const grid = document.getElementById('themeGrid');
+  grid.textContent = '';
+  const entries = Object.entries(YLP_THEMES).concat([['custom', ylpResolveTheme({ ...ylpPopupSettings, theme: 'custom' })]]);
+  for (const [key, th] of entries) {
+    const b = document.createElement('button');
+    b.className = 'theme-swatch' + (ylpPopupSettings.theme === key ? ' selected' : '');
+    b.style.background = ylpThemeBackground(th, 1);
+    b.style.color = th.text;
+    b.title = key === 'custom' ? '自訂' : th.name;
+    b.textContent = key === 'custom' ? '自訂' : th.name.replace('（預設）', '');
+    b.addEventListener('click', () => ylpSelectTheme(key));
+    grid.appendChild(b);
+  }
+  const cur = ylpPopupSettings.theme === 'custom' ? '自訂' : (YLP_THEMES[ylpPopupSettings.theme] || YLP_THEMES.dark).name;
+  document.getElementById('themeName').textContent = '目前：' + cur;
+  document.getElementById('customThemeRow').style.display = ylpPopupSettings.theme === 'custom' ? '' : 'none';
+}
+
+function ylpSelectTheme(key) {
+  ylpPopupSettings.theme = key;
+  const light = ylpThemeIsLight(ylpResolveTheme(ylpPopupSettings));
+  // 淺色主題時，設定視窗與輸入框也跟著用淺色
+  chrome.storage.sync.set({ theme: key, darkMode: !light });
+  darkModeEnabled = !light;
+  updateToggleUI();
+  ylpRenderThemeGrid();
+  ylpRenderKaraokeGrid();
+}
+
+chrome.storage.sync.get(YLP_DEFAULTS, (s) => {
+  ylpPopupSettings = { ...YLP_DEFAULTS, ...s };
+  // 已移除的主題（例如舊版的拼色主題）改回預設
+  if (ylpPopupSettings.theme !== 'custom' && !YLP_THEMES[ylpPopupSettings.theme]) ylpPopupSettings.theme = 'dark';
+  for (const id of ['customBg1', 'customBg2', 'customText', 'customAccent']) document.getElementById(id).value = ylpPopupSettings[id];
+  document.getElementById('panelTransparency').value = ylpPopupSettings.panelTransparency;
+  document.getElementById('panelTransparencyValue').textContent = ylpPopupSettings.panelTransparency + '%';
+  document.getElementById('tapKeyBtn').textContent = ylpPopupKeyLabel(ylpPopupSettings.tapKey);
+  document.getElementById('undoKeyBtn').textContent = ylpPopupKeyLabel(ylpPopupSettings.undoKey);
+  ylpRenderThemeGrid();
+  for (const id of ['karaokeText', 'karaokeFill', 'karaokeTr']) document.getElementById(id).value = ylpPopupSettings[id];
+  document.getElementById('ccToggle').classList.toggle('active', !!ylpPopupSettings.ccSubs);
+  document.getElementById('ccSizeSelect').value = ['s', 'm', 'l'].includes(ylpPopupSettings.ccSize) ? ylpPopupSettings.ccSize : 'm';
+  ylpRenderKaraokeGrid();
+});
+
+// === 卡拉OK與影片字幕 ===
+function ylpRenderKaraokeGrid() {
+  const grid = document.getElementById('karaokeGrid');
+  grid.textContent = '';
+  const panelAccent = ylpResolveTheme(ylpPopupSettings).accent;
+  let selected = ylpPopupSettings.karaokeTheme;
+  if (selected !== 'custom' && !YLP_KARAOKE_THEMES[selected]) selected = 'auto';
+  const keys = Object.keys(YLP_KARAOKE_THEMES).concat(['custom']);
+  for (const key of keys) {
+    const k = ylpResolveKaraokeTheme({ ...ylpPopupSettings, karaokeTheme: key }, panelAccent);
+    const b = document.createElement('button');
+    b.className = 'theme-swatch k-swatch' + (selected === key ? ' selected' : '');
+    b.title = k.name;
+    const sample = document.createElement('span');
+    sample.className = 'k-sample';
+    const done = document.createElement('span');
+    done.style.color = k.fill;
+    done.textContent = '卡拉';
+    const rest = document.createElement('span');
+    rest.style.color = k.text;
+    rest.textContent = 'OK';
+    sample.append(done, rest);
+    const name = document.createElement('span');
+    name.className = 'k-name';
+    name.textContent = key === 'auto' ? '跟隨面板' : k.name;
+    b.append(sample, name);
+    b.addEventListener('click', () => {
+      ylpPopupSettings.karaokeTheme = key;
+      chrome.storage.sync.set({ karaokeTheme: key });
+      ylpRenderKaraokeGrid();
+    });
+    grid.appendChild(b);
+  }
+  document.getElementById('karaokeThemeName').textContent = '目前：' + (selected === 'custom' ? '自訂' : YLP_KARAOKE_THEMES[selected].name);
+  document.getElementById('karaokeCustomRow').style.display = selected === 'custom' ? '' : 'none';
+}
+
+for (const id of ['karaokeText', 'karaokeFill', 'karaokeTr']) {
+  const el = document.getElementById(id);
+  el.addEventListener('input', () => {           // 拖動調色盤時即時預覽
+    ylpPopupSettings[id] = el.value;
+    ylpPreview({ [id]: el.value, karaokeTheme: 'custom' });
+    ylpRenderKaraokeGrid();
+  });
+  el.addEventListener('change', () => {          // 確定後才儲存
+    ylpPopupSettings[id] = el.value;
+    chrome.storage.sync.set({ [id]: el.value, karaokeTheme: 'custom' });
+  });
+}
+
+document.getElementById('ccToggle').addEventListener('click', function () {
+  const on = !this.classList.contains('active');
+  this.classList.toggle('active', on);
+  ylpPopupSettings.ccSubs = on;
+  chrome.storage.sync.set({ ccSubs: on });
+});
+document.getElementById('ccSizeSelect').addEventListener('change', function () {
+  chrome.storage.sync.set({ ccSize: this.value });
+});
+// 「CC」按鈕也能在歌詞面板切換，這裡同步顯示
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'sync' && 'ccSubs' in changes) {
+    ylpPopupSettings.ccSubs = !!changes.ccSubs.newValue;
+    document.getElementById('ccToggle').classList.toggle('active', ylpPopupSettings.ccSubs);
+  }
+});
+
+for (const id of ['customBg1', 'customBg2', 'customText', 'customAccent']) {
+  const el = document.getElementById(id);
+  el.addEventListener('input', () => {           // 拖動調色盤時即時預覽
+    ylpPopupSettings[id] = el.value;
+    ylpPreview({ [id]: el.value, theme: 'custom' });
+    ylpRenderThemeGrid();
+    ylpRenderKaraokeGrid();
+  });
+  el.addEventListener('change', () => {          // 確定後才儲存
+    ylpPopupSettings[id] = el.value;
+    const light = ylpThemeIsLight(ylpResolveTheme(ylpPopupSettings));
+    chrome.storage.sync.set({ [id]: el.value, darkMode: !light });
+  });
+}
+
+const ylpPanelRange = document.getElementById('panelTransparency');
+ylpPanelRange.addEventListener('input', () => {
+  const n = Math.min(90, Math.max(0, parseInt(ylpPanelRange.value, 10) || 0));
+  document.getElementById('panelTransparencyValue').textContent = n + '%';
+  ylpPreview({ panelTransparency: n });
+});
+ylpPanelRange.addEventListener('change', () => {
+  const n = Math.min(90, Math.max(0, parseInt(ylpPanelRange.value, 10) || 0));
+  chrome.storage.sync.set({ panelTransparency: n });
+});
+
+// === 打點按鍵 ===
+function ylpPopupKeyLabel(code) {
+  const map = { Enter: 'Enter', NumpadEnter: '數字鍵 Enter', Space: '空白鍵', Backspace: 'Backspace', Tab: 'Tab',
+    ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', Delete: 'Delete' };
+  if (map[code]) return map[code];
+  if (/^Key[A-Z]$/.test(code)) return code.slice(3);
+  if (/^Digit\d$/.test(code)) return code.slice(5);
+  if (/^Numpad\d$/.test(code)) return '數字鍵 ' + code.slice(6);
+  return code || '?';
+}
+
+let ylpWaitingKeyBtn = null;
+for (const id of ['tapKeyBtn', 'undoKeyBtn']) {
+  const b = document.getElementById(id);
+  b.addEventListener('click', () => {
+    if (ylpWaitingKeyBtn) ylpWaitingKeyBtn.classList.remove('waiting');
+    ylpWaitingKeyBtn = b;
+    b.classList.add('waiting');
+    b.textContent = '請按一個鍵…';
+  });
+}
+document.addEventListener('keydown', (e) => {
+  if (!ylpWaitingKeyBtn) return;
+  e.preventDefault();
+  const b = ylpWaitingKeyBtn;
+  const key = b.dataset.key;
+  const other = key === 'tapKey' ? 'undoKey' : 'tapKey';
+  const reset = () => { b.classList.remove('waiting'); b.textContent = ylpPopupKeyLabel(ylpPopupSettings[key]); ylpWaitingKeyBtn = null; };
+  if (e.code === 'Escape') { reset(); return; }                         // Esc＝取消設定
+  if (e.code === ylpPopupSettings[other]) { b.textContent = '跟另一個鍵重複'; setTimeout(reset, 1200); return; }
+  ylpPopupSettings[key] = e.code;
+  chrome.storage.sync.set({ [key]: e.code });
+  reset();
 });
