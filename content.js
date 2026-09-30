@@ -419,6 +419,26 @@ function ylpApplyTheme() {
     ${P} .ylp-other-video { margin-top: 6px; padding: 6px 8px; border-radius: 6px; font-size: 11px; line-height: 1.5; background: rgba(255, 159, 10, 0.15); color: ${light ? '#8a4b00' : '#ffcc80'}; }
     ${P} .ylp-confirm label { display: block; margin: 8px 0 4px; font-size: 12px; opacity: 0.8; }
     ${P} .ylp-confirm .ylp-confirm-video { margin-top: 8px; font-size: 12px; opacity: 0.7; word-break: break-all; }
+    ${P} .ylp-loading-head { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 4px 0 18px; }
+    ${P} .ylp-eq { display: flex; align-items: flex-end; gap: 3px; height: 22px; }
+    ${P} .ylp-eq span { width: 4px; height: 30%; border-radius: 2px; background: ${A}; animation: ylp-eq 1s ease-in-out infinite; }
+    ${P} .ylp-eq span:nth-child(2) { animation-delay: -0.8s; }
+    ${P} .ylp-eq span:nth-child(3) { animation-delay: -0.55s; }
+    ${P} .ylp-eq span:nth-child(4) { animation-delay: -0.3s; }
+    ${P} .ylp-eq span:nth-child(5) { animation-delay: -0.1s; }
+    ${P} .ylp-loading-title { font-size: 14px; font-weight: 600; color: ${T} !important; }
+    ${P} .ylp-dots i { font-style: normal; animation: ylp-dot 1.2s infinite; opacity: 0.2; }
+    ${P} .ylp-dots i:nth-child(2) { animation-delay: 0.2s; }
+    ${P} .ylp-dots i:nth-child(3) { animation-delay: 0.4s; }
+    ${P} .progress-box { transition: background 0.3s, border-color 0.3s, box-shadow 0.3s !important; }
+    ${P} .progress-box-current { animation: ylp-box-pulse 1s ease-in-out infinite; border-color: ${ylpRgba(A, 0.6)} !important; }
+    ${P} .progress-box-filled { box-shadow: 0 0 6px ${ylpRgba(A, 0.5)} !important; }
+    @keyframes ylp-eq { 0%, 100% { height: 25%; } 50% { height: 100%; } }
+    @keyframes ylp-dot { 0%, 100% { opacity: 0.2; } 40% { opacity: 1; } }
+    @keyframes ylp-box-pulse { 0%, 100% { background: ${ylpRgba(A, 0.12)}; } 50% { background: ${ylpRgba(A, 0.55)}; } }
+    @media (prefers-reduced-motion: reduce) {
+      ${P} .ylp-eq span, ${P} .ylp-dots i, ${P} .progress-box-current { animation: none; }
+    }
     ${P} .ylp-search-bar { display: flex; gap: 6px; padding: 8px 12px; flex-shrink: 0; border-bottom: 1px solid ${ylpRgba(T, 0.12)}; }
     ${P} .ylp-search-bar[hidden] { display: none; }
     ${P} .ylp-search-input {
@@ -1184,7 +1204,7 @@ function ylpOpenEditor(prefillOverride) {
   const box = ylpEl('div', 'ylp-editor');
   box.append(
     ylpEl('div', 'ylp-ed-title', '製作／編輯同步歌詞'),
-    ylpEl('div', 'ylp-ed-hint', '把歌詞貼在下面（一行一句），按「開始打點」：影片會從頭播放，每一句開始唱時按住 ' + ylpKeyLabel(ylpSettings.tapKey) + '、唱完放開（可在設定視窗更改按鍵）。已經有 LRC 格式（每行前面有 [00:12.34]）的歌詞，可以直接按「儲存」。朋友傳來的 .lrc 檔用「匯入」載入後按「儲存」。歌詞只存在這台電腦，這部影片以後會優先使用。')
+    ylpEl('div', 'ylp-ed-hint', '把歌詞貼在下面（一行一句），按「開始打點」：影片會從頭播放，每一句開始唱時按住 ' + ylpKeyLabel(ylpSettings.tapKey) + '、唱完放開（可在設定視窗更改按鍵）。已經有 LRC 格式（每行前面有 [00:12.34]）的歌詞，可以直接按「儲存」；只有部分時間不準的話，按「開始打點」後點那一句，就能只重打那一段。朋友傳來的 .lrc 檔用「匯入」載入後按「儲存」。歌詞只存在這台電腦，這部影片以後會優先使用。')
   );
   const ta = ylpEl('textarea', 'ylp-ed-text');
   ta.value = prefill || '';
@@ -1218,7 +1238,10 @@ function ylpOpenEditor(prefillOverride) {
   btn('▶ 開始打點', () => {
     const lines = ta.value.split(/\r?\n/).map((l) => l.replace(/\[[^\]]*\]/g, '').trim()).filter(Boolean);
     if (lines.length < 2) { msg.textContent = '請先貼上至少兩行歌詞。'; return; }
-    ylpStartTap(lines);
+    // 已經有時間的歌詞：保留原本的時間，可以只重打其中一段
+    const timed = ylpNormalizeLrc(ta.value);
+    const orig = timed.length === lines.length && timed.every((l, i) => l.text === lines[i]) ? timed : null;
+    ylpStartTap(lines, orig);
   }, true);
 
   btn('💾 儲存', async () => {
@@ -1402,20 +1425,24 @@ function ylpKeyMatches(e, code) {
 // 只是快速點一下（按住不到 0.25 秒）的話，就不記錄結束時間，改用下一句開始當作結束
 const YLP_TAP_MIN_HOLD = 0.25;
 
-function ylpStartTap(lines) {
+function ylpStartTap(lines, orig) {
   const content = document.getElementById('lyrics-content');
   const video = document.querySelector('video');
   if (!content || !video) return;
 
-  ylpTap = { lines, marks: [], video, holding: -1 };
+  // orig：原本的時間（有的話可以從中間重打，沒重打到的句子保留原本的時間）
+  ylpTap = { lines, orig: orig || null, marks: [], video, holding: -1, choosing: !!orig };
   const box = ylpEl('div', 'ylp-tap');
   const head = ylpEl('div', 'ylp-tap-head');
-  const tip = ylpEl('div', 'ylp-ed-hint', `每一句開始唱時「按住」${ylpKeyLabel(ylpSettings.tapKey)}，這句唱完就「放開」。句子之間有空檔（間奏、換氣）時，卡拉OK字幕會準時結束，不會拖到下一句。`);
-  const list = ylpEl('div', 'ylp-tap-list');
+  const tip = ylpEl('div', 'ylp-ed-hint', orig
+    ? `點下面任何一句，就從那一句開始重打：影片會跳到那句前 3 秒。前面的句子保留原本的時間；重打完需要的句子後按「完成並儲存」，後面沒重打的句子也會保留原本的時間。打點方式：每句開始唱時按住 ${ylpKeyLabel(ylpSettings.tapKey)}，唱完放開。`
+    : `每一句開始唱時「按住」${ylpKeyLabel(ylpSettings.tapKey)}，這句唱完就「放開」。句子之間有空檔（間奏、換氣）時，卡拉OK字幕會準時結束，不會拖到下一句。`);
+  const list = ylpEl('div', 'ylp-tap-list' + (orig ? ' pickable' : ''));
   lines.forEach((l, i) => {
     const row = ylpEl('div', 'ylp-tap-line');
     row.append(ylpEl('span', 'ylp-tap-time', '--:--'), ylpEl('span', 'ylp-tap-text', l));
     row.dataset.i = i;
+    row.addEventListener('click', () => ylpTapFrom(i));
     list.appendChild(row);
   });
   const row = ylpEl('div', 'ylp-ed-actions');
@@ -1436,6 +1463,7 @@ function ylpStartTap(lines) {
   tapBtn.addEventListener('pointercancel', () => ylpTapUp());
   row.appendChild(tapBtn);
   mk(`退回上一句（${ylpKeyLabel(ylpSettings.undoKey)}）`, ylpTapUndo);
+  if (orig) mk('從頭開始', () => ylpTapFrom(0));
   mk('完成並儲存', ylpTapFinish);
   mk('取消（Esc）', () => { ylpStopTap(); ylpOpenEditor(); });
 
@@ -1449,7 +1477,31 @@ function ylpStartTap(lines) {
   for (const type of ['keydown', 'keyup', 'keypress']) window.addEventListener(type, ylpTapKeys, true);
   window.addEventListener('blur', ylpTapUp); // 切換視窗時當作放開
   if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
-  video.currentTime = 0;
+  if (orig) {
+    video.pause(); // 先選要從哪一句開始
+  } else {
+    video.currentTime = 0;
+    video.play().catch(() => {});
+  }
+  ylpTapRefresh();
+}
+
+// 從第 k 句開始（重新）打點：前面的句子保留（已經重打過的用新的時間，其餘用原本的時間）
+function ylpTapFrom(k) {
+  if (!ylpTap) return;
+  const { marks, orig, video, lines } = ylpTap;
+  if (k < 0 || k >= lines.length) return;
+  if (!orig && k > marks.length) return; // 沒有原本時間時，不能跳過還沒打的句子
+  const kept = [];
+  for (let i = 0; i < k; i++) {
+    if (i < marks.length) kept.push(marks[i]);
+    else kept.push({ start: orig[i].time, end: orig[i].end, kept: true });
+  }
+  ylpTap.marks = kept;
+  ylpTap.holding = -1;
+  ylpTap.choosing = false;
+  const ref = orig ? orig[k].time : (marks[k] ? marks[k].start : (kept.length ? kept[kept.length - 1].start : 0));
+  video.currentTime = Math.max(0, ref - 3);
   video.play().catch(() => {});
   ylpTapRefresh();
 }
@@ -1476,11 +1528,17 @@ function ylpTapKeys(e) {
 
 function ylpTapDown() {
   if (!ylpTap || ylpTap.holding >= 0) return;
+  if (ylpTap.choosing) {
+    ylpTap.head.textContent = '請先點一句歌詞，選擇要從哪一句開始重打（或按「從頭開始」）。';
+    return;
+  }
   const { marks, lines, video } = ylpTap;
   if (marks.length >= lines.length) return;
   const prev = marks[marks.length - 1];
-  const floor = prev ? Math.max(prev.start, Number.isFinite(prev.end) ? prev.end : prev.start) + 0.05 : 0;
-  marks.push({ start: Math.max(video.currentTime, floor) });
+  const start = Math.max(video.currentTime, prev ? prev.start + 0.05 : 0);
+  // 新的開始時間比上一句的結束還早：把上一句的結束提前
+  if (prev && Number.isFinite(prev.end) && prev.end > start) prev.end = start - prev.start >= YLP_TAP_MIN_HOLD ? start : undefined;
+  marks.push({ start });
   ylpTap.holding = marks.length - 1;
   ylpTapRefresh();
 }
@@ -1496,7 +1554,7 @@ function ylpTapUp() {
 }
 
 function ylpTapUndo() {
-  if (!ylpTap || !ylpTap.marks.length) return;
+  if (!ylpTap || !ylpTap.marks.length || ylpTap.choosing) return;
   const removed = ylpTap.marks.pop();
   ylpTap.holding = -1;
   ylpTap.video.currentTime = Math.max(0, removed.start - 3); // 倒回這句前 3 秒重新打點
@@ -1505,33 +1563,52 @@ function ylpTapUndo() {
 
 function ylpTapFinish() {
   if (!ylpTap) return;
-  const { marks, lines, video } = ylpTap;
+  const { marks, lines, video, orig } = ylpTap;
   if (ylpTap.holding >= 0) { // 還按著就按完成：用現在的時間當結束
     const m = marks[ylpTap.holding];
     if (m && video.currentTime - m.start >= YLP_TAP_MIN_HOLD) m.end = video.currentTime;
     ylpTap.holding = -1;
   }
-  if (marks.length < 2) { ylpTap.head.textContent = '至少要打點兩句才能儲存。'; return; }
-  ylpFinishLocal(marks.map((m, i) => ({ time: m.start, text: lines[i], end: m.end })));
+  if (orig && ylpTap.choosing) { ylpTap.head.textContent = '還沒有重打任何一句。點一句歌詞開始重打，或按「取消」。'; return; }
+  if (!orig && marks.length < 2) { ylpTap.head.textContent = '至少要打點兩句才能儲存。'; return; }
+  const out = marks.map((m, i) => ({ time: m.start, text: lines[i], end: m.end }));
+  // 沒有重打到的後面句子：保留原本的時間
+  if (orig) for (let i = marks.length; i < lines.length; i++) out.push({ time: orig[i].time, text: lines[i], end: orig[i].end });
+  // 確保時間順序正確：後一句不能比前一句早，前一句的結束不能晚於後一句開始
+  for (let i = 1; i < out.length; i++) {
+    const prev = out[i - 1], cur = out[i];
+    if (cur.time <= prev.time) cur.time = prev.time + 0.05;
+    if (Number.isFinite(prev.end) && prev.end > cur.time) prev.end = cur.time - prev.time >= YLP_TAP_MIN_HOLD ? cur.time : undefined;
+    if (Number.isFinite(cur.end) && cur.end <= cur.time) cur.end = undefined;
+  }
+  ylpFinishLocal(out);
 }
 
 function ylpTapRefresh() {
   if (!ylpTap) return;
-  const { marks, lines, head, list, holding } = ylpTap;
+  const { marks, lines, head, list, holding, orig, choosing } = ylpTap;
   const n = marks.length;
   const key = ylpKeyLabel(ylpSettings.tapKey);
-  head.textContent = holding >= 0
-    ? `第 ${holding + 1} 句唱完時放開 ${key}（${n} / ${lines.length}）`
-    : n < lines.length
-      ? `打點中：${n} / ${lines.length}　下一句開始唱時按住 ${key}`
-      : `全部完成：${n} / ${lines.length}`;
+  const span = (a, b) => ylpFormatTime(a) + (Number.isFinite(b) ? ' ～ ' + ylpFormatTime(b) : '');
+  head.textContent = choosing
+    ? '要從哪一句開始重打？點那一句（前後沒重打的句子都會保留原本的時間）'
+    : holding >= 0
+      ? `第 ${holding + 1} 句唱完時放開 ${key}（${n} / ${lines.length}）`
+      : n < lines.length
+        ? `打點中：第 ${n + 1} 句 / 共 ${lines.length} 句　開始唱時按住 ${key}` + (orig ? '　（重打完需要的句子就可以按「完成並儲存」）' : '')
+        : `全部完成：${n} / ${lines.length}`;
   list.querySelectorAll('.ylp-tap-line').forEach((row, i) => {
     const m = marks[i];
-    row.classList.toggle('done', i < n && i !== holding);
+    const o = orig && orig[i];
+    row.classList.toggle('done', !!m && i !== holding && !m.kept);
+    row.classList.toggle('kept', !!m && !!m.kept);
+    row.classList.toggle('orig', !m && !!o);
     row.classList.toggle('holding', i === holding);
-    row.classList.toggle('next', holding < 0 && i === n);
-    row.querySelector('.ylp-tap-time').textContent = !m ? '--:--'
-      : ylpFormatTime(m.start) + (i === holding ? ' ～' : Number.isFinite(m.end) ? ' ～ ' + ylpFormatTime(m.end) : '');
+    row.classList.toggle('next', !choosing && holding < 0 && i === n);
+    row.querySelector('.ylp-tap-time').textContent = m
+      ? (i === holding ? ylpFormatTime(m.start) + ' ～' : span(m.start, m.end))
+      : o ? span(o.time, o.end) : '--:--';
+    row.title = orig || i <= n ? '從這一句開始重打' : '';
   });
   const focus = list.querySelector('.ylp-tap-line.holding, .ylp-tap-line.next');
   const content = document.getElementById('lyrics-content');
@@ -1973,9 +2050,7 @@ function renderProgressBar() {
   let boxesHTML = '';
   
   for (let i = 0; i < PROGRESS_TOTAL_BOXES; i++) {
-    const isFilled = i < currentFilledBoxes;
-    const boxClass = isFilled ? 'progress-box-filled' : 'progress-box-empty';
-    boxesHTML += `<div class="progress-box ${boxClass}"></div>`;
+    boxesHTML += `<div class="progress-box ${ylpProgressBoxClass(i)}"></div>`;
   }
   
   const percentage = Math.round((currentFilledBoxes / PROGRESS_TOTAL_BOXES) * 100);
@@ -1986,6 +2061,10 @@ function renderProgressBar() {
   
   return `
     <div class="lyrics-loading">
+      <div class="ylp-loading-head">
+        <div class="ylp-eq" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+        <div class="ylp-loading-title">正在尋找歌詞<span class="ylp-dots"><i>.</i><i>.</i><i>.</i></span></div>
+      </div>
       <div class="segmented-progress-container">
         ${boxesHTML}
       </div>
@@ -2022,12 +2101,29 @@ function renderProgressBar() {
 /**
  * Update progress bar in DOM (if it exists)
  */
+// 已填滿／正在找（會閃動）／還沒輪到
+function ylpProgressBoxClass(i) {
+  if (i < currentFilledBoxes) return 'progress-box-filled';
+  if (i === currentFilledBoxes) return 'progress-box-empty progress-box-current';
+  return 'progress-box-empty';
+}
+
 function updateProgressBarUI() {
   const content = document.getElementById('lyrics-content');
   if (!content) return;
   
   // Only update if loading UI is visible
   const loadingDiv = content.querySelector('.lyrics-loading');
+  // 直接更新格子與文字，不整個重畫：動畫不會中斷，手動搜尋框裡打到一半的字也不會被清掉
+  const boxes = loadingDiv ? loadingDiv.querySelectorAll('.progress-box') : [];
+  if (loadingDiv && boxes.length === PROGRESS_TOTAL_BOXES) {
+    boxes.forEach((b, i) => { b.className = 'progress-box ' + ylpProgressBoxClass(i); });
+    const label = loadingDiv.querySelector('.progress-label');
+    if (label) label.textContent = loadingLabel;
+    const pct = loadingDiv.querySelector('.progress-percentage');
+    if (pct) pct.textContent = Math.round((currentFilledBoxes / PROGRESS_TOTAL_BOXES) * 100) + '%';
+    return;
+  }
   if (loadingDiv) {
     content.innerHTML = renderProgressBar();
     
@@ -3339,6 +3435,9 @@ function createLyricsPanel() {
       #lyrics-extension-panel .ylp-tap-line.next { opacity: 1; font-weight: 600; background: rgba(10, 132, 255, 0.18); }
       #lyrics-extension-panel .ylp-tap-time { font-variant-numeric: tabular-nums; opacity: 0.7; min-width: 64px; white-space: nowrap; font-size: 0.9em; }
       #lyrics-extension-panel .ylp-tap-line.holding { opacity: 1; font-weight: 700; background: rgba(255, 159, 10, 0.25); }
+      #lyrics-extension-panel .ylp-tap-line { cursor: pointer; }
+      #lyrics-extension-panel .ylp-tap-line:hover { outline: 1px dashed rgba(128, 128, 128, 0.5); }
+      #lyrics-extension-panel .ylp-tap-line.kept, #lyrics-extension-panel .ylp-tap-line.orig { opacity: 0.55; font-style: italic; }
     </style>
     
     <div class="lyrics-header" id="lyrics-header">
