@@ -230,8 +230,23 @@ function ylpDotEl() {
   };
   dot.addEventListener('pointerup', up);
   dot.addEventListener('pointercancel', () => { down = false; });
+  dot.addEventListener('mouseenter', () => { ylpDotHover = true; ylpApplyDotTransparency(); });
+  dot.addEventListener('mouseleave', () => { ylpDotHover = false; ylpApplyDotTransparency(); });
   document.body.appendChild(dot);
+  ylpDotHover = false;
+  ylpApplyDotTransparency();
   return dot;
+}
+
+// 小圓點透明度：跟隨縮小列，或用自己的設定；滑鼠移上去時恢復不透明
+var ylpDotHover = false;
+function ylpApplyDotTransparency() {
+  const dot = document.getElementById('ylp-dot');
+  if (!dot) return;
+  const src = ylpSettings.dotFollowBar !== false ? ylpSettings.miniTransparency : ylpSettings.dotTransparency;
+  const t = Math.min(90, Math.max(0, Number(src) || 0));
+  if (!ylpDotHover && t > 0) dot.style.setProperty('opacity', String((100 - t) / 100), 'important');
+  else dot.style.removeProperty('opacity');
 }
 
 function ylpPlaceDot(left, top) {
@@ -516,7 +531,7 @@ function ylpApplyTheme() {
       display: flex; align-items: center; justify-content: center; cursor: pointer; touch-action: none; user-select: none;
       background: radial-gradient(circle at 30% 30%, ${ylpRgba(A, 1)}, ${ylpRgba(A, 0.75)});
       box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35), 0 0 0 3px ${ylpRgba(A, 0.25)};
-      transition: transform 0.15s, box-shadow 0.15s;
+      transition: transform 0.15s, box-shadow 0.15s, opacity 0.2s;
     }
     #ylp-dot:hover { transform: scale(1.1); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4), 0 0 0 5px ${ylpRgba(A, 0.3)}; }
     #ylp-dot .ylp-dot-eq { display: flex; align-items: flex-end; gap: 2px; height: 16px; }
@@ -598,6 +613,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     for (const k of Object.keys(request.values)) if (k in YLP_DEFAULTS) ylpSettings[k] = request.values[k];
     ylpApplyTheme();
     ylpApplyMiniTransparency();
+    ylpApplyDotTransparency();
     sendResponse({ ok: true });
   }
 });
@@ -628,6 +644,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if ('karaokeWipe' in changes) ylpKaraokeRender(true);
   if ('ccSubs' in changes || 'ccSize' in changes || 'translate' in changes || 'targetLang' in changes) { ylpUpdateCcButton(); ylpCcRender(true); }
   if ('miniTransparency' in changes) ylpApplyMiniTransparency();
+  if ('miniTransparency' in changes || 'dotFollowBar' in changes || 'dotTransparency' in changes) ylpApplyDotTransparency();
   ylpApplyTheme();
 });
 

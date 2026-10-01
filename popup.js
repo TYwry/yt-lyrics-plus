@@ -774,3 +774,41 @@ chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
   if (!tab || !/^https:\/\/(www\.|m\.)?youtube\.com\/watch/.test(tab.url || '')) return;
   chrome.tabs.sendMessage(tab.id, { action: 'ylpShowIfClosed' }, () => void chrome.runtime.lastError);
 });
+
+// === 小圓點透明度（預設跟隨縮小列透明度） ===
+const ylpDotState = { follow: true, own: 0, mini: 0 };
+function ylpRenderDotRow() {
+  const val = ylpDotState.follow ? ylpDotState.mini : ylpDotState.own;
+  document.getElementById('dotFollowToggle').classList.toggle('active', ylpDotState.follow);
+  const r = document.getElementById('dotTransparency');
+  r.disabled = ylpDotState.follow;
+  r.value = val;
+  document.getElementById('dotTransparencyValue').textContent = val + '%' + (ylpDotState.follow ? '（跟隨縮小列）' : '');
+}
+chrome.storage.sync.get({ dotFollowBar: true, dotTransparency: 0, miniTransparency: 0 }, (s) => {
+  ylpDotState.follow = s.dotFollowBar !== false;
+  ylpDotState.own = Math.min(90, Math.max(0, Number(s.dotTransparency) || 0));
+  ylpDotState.mini = Math.min(90, Math.max(0, Number(s.miniTransparency) || 0));
+  ylpRenderDotRow();
+});
+document.getElementById('dotFollowToggle').addEventListener('click', () => {
+  ylpDotState.follow = !ylpDotState.follow;
+  // 改成獨立設定時，從目前縮小列的數值開始調
+  if (!ylpDotState.follow) ylpDotState.own = ylpDotState.mini;
+  ylpRenderDotRow();
+  chrome.storage.sync.set({ dotFollowBar: ylpDotState.follow, dotTransparency: ylpDotState.own });
+});
+const ylpDotRange = document.getElementById('dotTransparency');
+ylpDotRange.addEventListener('input', () => {
+  ylpDotState.own = Math.min(90, Math.max(0, parseInt(ylpDotRange.value, 10) || 0));
+  ylpRenderDotRow();
+  ylpPreview({ dotTransparency: ylpDotState.own, dotFollowBar: false }); // 拖動中只預覽
+});
+ylpDotRange.addEventListener('change', () => {
+  chrome.storage.sync.set({ dotTransparency: ylpDotState.own });
+});
+// 縮小列透明度改變時，跟隨模式的顯示也一起更新
+document.getElementById('miniTransparency').addEventListener('input', function () {
+  ylpDotState.mini = Math.min(90, Math.max(0, parseInt(this.value, 10) || 0));
+  if (ylpDotState.follow) ylpRenderDotRow();
+});

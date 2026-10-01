@@ -731,6 +731,8 @@
       border: 1px solid rgba(120,120,128,0.35); background: rgba(120,120,128,0.12); color: inherit;
     }
     .key-btn.waiting { border-color: #34C759; color: #34C759; }
+    .dot-follow { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; font-size: 12px; }
+    .range:disabled { opacity: 0.4; }
   </style>
 </head>
 <body>
@@ -901,6 +903,17 @@
             <div class="setting-label">縮小列透明度 <span id="miniTransparencyValue">0%</span></div>
             <div class="setting-description">歌詞面板縮小後的透明程度，滑鼠移上去會恢復</div>
             <input type="range" id="miniTransparency" min="0" max="90" step="5" class="range">
+          </div>
+        </div>
+        <div class="setting-row block" id="dotTransparencyRow">
+          <div class="setting-info">
+            <div class="setting-label">小圓點透明度 <span id="dotTransparencyValue" class="value-tag">0%</span></div>
+            <div class="setting-description">按標題列的 ● 縮成小圓點後的透明程度，滑鼠移上去會恢復</div>
+            <div class="dot-follow">
+              <span>跟隨縮小列透明度</span>
+              <div class="toggle-switch" id="dotFollowToggle"><div class="toggle-slider"></div></div>
+            </div>
+            <input type="range" id="dotTransparency" min="0" max="90" step="5" class="range">
           </div>
         </div>
         <div class="setting-row">
