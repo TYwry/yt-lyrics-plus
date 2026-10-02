@@ -74,11 +74,14 @@ function ylpRender() {
     let songCell;
     let songIn, artistIn;
     if (editing) {
-      songIn = el('input', { type: 'text', maxlength: '200', placeholder: '歌名' });
+      songIn = el('input', { type: 'text', maxlength: '200', id: 'ylp-edit-song' });
       songIn.value = e.song;
-      artistIn = el('input', { type: 'text', maxlength: '200', placeholder: '歌手' });
+      artistIn = el('input', { type: 'text', maxlength: '200', id: 'ylp-edit-artist' });
       artistIn.value = e.artist;
-      songCell = el('td', { class: 'song' }, [songIn, artistIn]);
+      songCell = el('td', { class: 'song' }, [
+        el('label', { class: 'edit-label', for: 'ylp-edit-song', text: '歌名' }), songIn,
+        el('label', { class: 'edit-label', for: 'ylp-edit-artist', text: '歌手' }), artistIn,
+      ]);
       const onKey = (ev) => { if (ev.key === 'Enter' && !ev.isComposing) saveEdit(); else if (ev.key === 'Escape') { ylpEditing = null; ylpRender(); } };
       songIn.addEventListener('keydown', onKey);
       artistIn.addEventListener('keydown', onKey);

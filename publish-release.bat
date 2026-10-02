@@ -21,7 +21,14 @@ if not exist "%OUT%" ( echo 打包失敗。& pause & exit /b 1 )
 
 echo 正在發布 v%VER% ...
 gh release create v%VER% "%OUT%" --title "v%VER%" --notes "YT 歌詞（中文版） v%VER%"
+if errorlevel 1 (
+  del "%OUT%"
+  echo.
+  echo 發布失敗：GitHub 上可能已經有 v%VER% 這個版本，或是網路、登入有問題。
+  pause
+  exit /b 1
+)
 del "%OUT%"
 echo.
-echo 已發布 v%VER%。下次發布前記得先把 manifest.json 的 version 改大。
+echo 已發布 v%VER%。
 pause

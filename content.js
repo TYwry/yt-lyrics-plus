@@ -624,6 +624,7 @@ function ylpApplyTheme() {
     ${P} .ylp-field-label { display: block; font-size: 12px; margin: 0 0 6px; color: ${ylpRgba(T, 0.75)} !important; }
     ${P} .ylp-search-bar { display: flex; gap: 6px; padding: 8px 12px; flex-shrink: 0; border-bottom: 1px solid ${ylpRgba(T, 0.12)}; }
     ${P} .ylp-search-bar[hidden] { display: none; }
+    ${P} .ylp-hs-label { align-self: center; flex-shrink: 0; font-size: 12px; white-space: nowrap; color: ${ylpRgba(T, 0.75)} !important; }
     ${P} .ylp-search-input {
       flex: 1; min-width: 0; height: 30px; padding: 0 10px; border-radius: 8px; font: inherit; font-size: 13px; outline: none;
       background: ${ylpRgba(light ? '#ffffff' : '#000000', light ? 0.7 : 0.25)} !important;
@@ -1411,7 +1412,7 @@ function ylpOpenEditor(prefillOverride) {
   );
   const ta = ylpEl('textarea', 'ylp-ed-text');
   ta.value = prefill || '';
-  ta.placeholder = '在這裡貼上歌詞，一行一句';
+  ta.setAttribute('aria-label', '歌詞（一行一句）'); // 用途寫在上方說明，框內不放提示字
   ta.spellcheck = false;
   // 避免在輸入框打字時觸發 YouTube 快捷鍵
   ta.addEventListener('keydown', (e) => e.stopPropagation());
@@ -1999,7 +2000,9 @@ async function ylpCheckMusicForDot(videoId, title, channelName, keywordMusic) {
   let musicSection = false;
   try { musicSection = !!getMusicInfoFromMusicSection(); } catch (e) { /* 忽略 */ }
   const extraKeywords = /(^|[\s\[【(（|｜])(m\/?v|mv)([\s\]】)）|｜]|$)|music video|lyric|官方|主題曲|主题曲|片頭曲|片尾曲|插曲|\bost\b|翻唱|\bcover\b|\bfeat\.?|\bft\.|歌ってみた|커버|뮤직비디오/i;
-  const isMusic = category === 'Music' || musicSection || keywordMusic || extraKeywords.test(title);
+  // 預告片、遊戲實況、Vlog 等常帶有 official、live 等字，只有 YouTube 分類是「音樂」時才算
+  const notMusic = /\b(trailer|teaser|gameplay|walkthrough|let'?s play|vlog|podcast|reaction|unboxing|tutorial|review|news|highlights?|livestream|stream)\b|預告|预告|實況|实况|遊戲|游戏|開箱|开箱|教學|教学|新聞|新闻|直播|精華|精华/i;
+  const isMusic = category === 'Music' || musicSection || ((keywordMusic || extraKeywords.test(title)) && !notMusic.test(title));
   const instrumental = ylpIsInstrumental(title, channelName);
   console.log('🎵 小圓點判斷：分類=' + (category || '?') + ' 音樂區塊=' + musicSection + ' 關鍵字=' + keywordMusic + ' 純音樂=' + instrumental);
   if (isMusic && !instrumental && smartAutoShow) ylpShowSuggestDot();
@@ -2356,10 +2359,11 @@ function renderProgressBar() {
           <span>⏱️</span>
           <span>或手動搜尋</span>
         </div>
+        <label class="ylp-field-label" for="${uniqueInputId}">輸入「歌手 - 歌名」</label>
         <input 
           type="text" 
           class="manual-search-input" 
-          placeholder="歌手 - 歌名"
+          aria-label="歌手 - 歌名"
           id="${uniqueInputId}"
           name="no-autofill-${Date.now()}"
           autocomplete="new-password"
@@ -3827,7 +3831,8 @@ function createLyricsPanel() {
     </div>
     
     <div class="ylp-search-bar" id="ylp-search-bar" hidden>
-      <input type="text" class="ylp-search-input" placeholder="歌不對？輸入「歌手 - 歌名」"
+      <label class="ylp-hs-label" for="ylp-hs-input">歌手 - 歌名</label>
+      <input type="text" class="ylp-search-input" id="ylp-hs-input" aria-label="歌手 - 歌名"
         autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
         data-lpignore="true" data-form-type="other" maxlength="200" />
       <button type="button" class="ylp-search-go">搜尋</button>

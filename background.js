@@ -4,7 +4,7 @@
 
 importScripts('library-core.js');
 
-// 安裝包裡附的歌詞（bundled-lyrics.json，由「打包給朋友.bat」放入）：安裝或更新時匯入歌詞庫
+// 安裝包裡附的歌詞（bundled-lyrics.json，由「publish-release.bat」發布時放入）：安裝或更新時匯入歌詞庫
 async function ylpImportBundled() {
   let text;
   try {

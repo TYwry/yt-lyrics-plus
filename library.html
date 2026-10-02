@@ -25,6 +25,8 @@
     header img { width: 44px; height: 44px; }
     h1 { font-size: 22px; margin: 0; }
     .count { color: var(--sub); font-size: 13px; margin-top: 2px; }
+    .search-label { color: var(--sub); font-size: 13px; white-space: nowrap; }
+    .edit-label { display: block; color: var(--sub); font-size: 12px; font-weight: 400; margin-top: 4px; }
     .grow { flex: 1; }
     .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 20px 0 12px; }
     .search {
@@ -85,7 +87,8 @@
     </header>
 
     <div class="toolbar">
-      <input class="search" id="search" type="search" placeholder="搜尋歌名、歌手或影片標題" autocomplete="off">
+      <label class="search-label" for="search">搜尋歌名、歌手或影片標題</label>
+      <input class="search" id="search" type="search" autocomplete="off">
       <button class="primary" id="importBtn">📂 匯入</button>
       <button id="exportAllBtn">⬆ 全部匯出</button>
       <button id="exportSelBtn" disabled>⬆ 匯出勾選的</button>
