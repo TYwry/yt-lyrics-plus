@@ -65,6 +65,11 @@
             name: t.name?.simpleText || (t.name?.runs || []).map((r) => r.text).join('') || '',
           })),
         });
+      } else if (type === 'getInfo') {
+        // 影片分類（例如 Music），用來判斷是不是音樂影片
+        const resp = p && p.getPlayerResponse ? p.getPlayerResponse() : null;
+        const mf = resp?.microformat?.playerMicroformatRenderer || {};
+        post({ type: 'info', id, videoId: resp?.videoDetails?.videoId || '', category: String(mf.category || '') });
       } else if (type === 'enableTrack') {
         p.loadModule && p.loadModule('captions');
         p.setOption('captions', 'track', { languageCode: e.data.languageCode });

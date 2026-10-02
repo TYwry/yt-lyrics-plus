@@ -1,7 +1,7 @@
 // ============================================================================
 // 自動捲動與翻譯（中文版新增）
 // ============================================================================
-const YLP_DEFAULTS = { autoScroll: true, pauseSeconds: 4, translate: true, targetLang: 'zh-TW', karaokeWipe: true, useYouTubeCaptions: true, miniTransparency: 0, tapKey: 'Enter', undoKey: 'Backspace', ...YLP_THEME_DEFAULTS };
+const YLP_DEFAULTS = { autoScroll: true, pauseSeconds: 4, translate: true, targetLang: 'zh-TW', karaokeWipe: true, useYouTubeCaptions: true, miniTransparency: 0, tapKey: 'Enter', undoKey: 'Backspace', offsetStep: 0.2, ...YLP_THEME_DEFAULTS };
 let ylpSettings = { ...YLP_DEFAULTS };
 let ylpResumeTimer = null;
 let ylpLastScrolledIndex = -1;
@@ -19,7 +19,7 @@ function ylpEscape(text) {
 var ylpOffset = 0;
 var ylpOffsetVideo = null;
 var ylpSyncDirty = true;   // 需要重畫歌詞高亮
-const YLP_OFFSET_LIMIT = 3; // 最多調整 ±3 秒
+const YLP_OFFSET_LIMIT = 30; // 最多調整 ±30 秒
 
 function ylpOffsetKey(videoId) { return 'ylpOffset:' + videoId; }
 
@@ -28,20 +28,18 @@ function ylpLyricTime(video) {
   return (video ? video.currentTime : 0) + ylpOffset;
 }
 
-// 可以調到的秒數：0，或 1.0～3.0 秒（每 0.2 秒一格），往前往後都一樣
-const YLP_OFFSET_VALUES = (() => {
-  const pos = [];
-  for (let i = 0; i <= 10; i++) pos.push(Math.round((1 + i * 0.2) * 10) / 10);
-  return [...pos.map((v) => -v).reverse(), 0, ...pos];
-})();
+// 每按一次＋／−調整的秒數（標題列的下拉選單）
+const YLP_OFFSET_STEPS = [0.2, 0.5, 1, 2, 3, 5, 10];
+function ylpOffsetStep() {
+  const n = Number(ylpSettings.offsetStep);
+  return YLP_OFFSET_STEPS.includes(n) ? n : 0.2;
+}
 
-// 按一下＋／−：跳到下一格（0 → 1.0 → 1.2 … → 3.0，到上限就停住）
+// 按一下＋／−：照選的間距加減（例如間距 0.2：0 → 0.2 → 0.4 → 0.6 …），到 ±30 秒就停住
 function ylpOffsetNudge(dir) {
   const cur = ylpOffset;
-  const next = dir > 0
-    ? YLP_OFFSET_VALUES.find((v) => v > cur + 0.001)
-    : [...YLP_OFFSET_VALUES].reverse().find((v) => v < cur - 0.001);
-  if (next !== undefined) ylpSetOffset(next);
+  const next = Math.max(-YLP_OFFSET_LIMIT, Math.min(YLP_OFFSET_LIMIT, Math.round((cur + dir * ylpOffsetStep()) * 10) / 10));
+  if (Math.abs(next - cur) >= 0.001) ylpSetOffset(next);
 }
 
 function ylpOffsetText(v) {
@@ -60,6 +58,8 @@ function ylpUpdateOffsetUI() {
     el.title = ylpOffsetTitle(ylpOffset);
     el.classList.toggle('moved', Math.abs(ylpOffset) >= 0.05);
   }
+  const step = String(ylpOffsetStep());
+  for (const sel of document.querySelectorAll('.ylp-off-step')) if (sel.value !== step) sel.value = step;
 }
 
 async function ylpLoadOffset(videoId) {
@@ -99,6 +99,9 @@ function ylpOffsetControlsHTML() {
     + `<button type="button" class="ylp-off-btn" data-ylp-off="-" title="字幕延後（字幕太早出現時按）">−</button>`
     + `<button type="button" class="ylp-off-btn ylp-offset-val" data-ylp-off="reset" title="${ylpOffsetTitle(ylpOffset)}">${ylpOffsetText(ylpOffset)}</button>`
     + `<button type="button" class="ylp-off-btn" data-ylp-off="+" title="字幕提早（字幕跟不上時按）">+</button>`
+    + `<select class="ylp-off-step" title="每按一次＋／−調整幾秒" aria-label="每次調整的秒數">`
+    + YLP_OFFSET_STEPS.map((v) => `<option value="${v}"${v === ylpOffsetStep() ? ' selected' : ''}>${v}s</option>`).join('')
+    + `</select>`
     + `</span>`;
 }
 
@@ -116,6 +119,16 @@ document.addEventListener('click', (e) => {
   const d = b.getAttribute('data-ylp-off');
   if (d === 'reset') ylpSetOffset(0);
   else ylpOffsetNudge(d === '+' ? 1 : -1);
+}, true);
+
+// 下拉選單換間距：記住選擇，所有畫面（面板、卡拉OK）同步
+document.addEventListener('change', (e) => {
+  if (!ylpInOffsetCtl(e) || !e.target.classList.contains('ylp-off-step')) return;
+  const v = Number(e.target.value);
+  if (!YLP_OFFSET_STEPS.includes(v)) return;
+  ylpSettings.offsetStep = v;
+  ylpUpdateOffsetUI();
+  try { chrome.storage.sync.set({ offsetStep: v }); } catch (err) { /* 忽略 */ }
 }, true);
 
 // 焦點在微調按鈕上時按鍵，不要觸發 YouTube 的快捷鍵
@@ -150,6 +163,7 @@ async function ylpHeaderSearch(bar) {
   if (!q || go.disabled) return;
   go.disabled = true;
   go.textContent = '搜尋中…';
+  ylpSearchGen++; // 停止還在進行的自動搜尋
   let artist = '', song = q;
   for (const sep of [' - ', ' – ', ' — ', ' | ']) {
     if (q.includes(sep)) {
@@ -193,6 +207,20 @@ function ylpSetupHeaderSearch(panel) {
   });
 }
 
+// 縮小時按鈕顯示「展開」圖示，展開時顯示「−」
+function ylpUpdateMinimizeIcon() {
+  const btn = document.getElementById('minimize-btn');
+  const panel = document.getElementById('lyrics-extension-panel');
+  if (!btn || !panel) return;
+  const min = panel.classList.contains('minimized');
+  const icon = btn.querySelector('.ylp-min-icon');
+  if (icon) {
+    icon.textContent = min ? '⤢' : '−';
+    icon.style.fontSize = min ? '14px' : '16px';
+  }
+  btn.title = min ? '展開歌詞' : '縮小';
+}
+
 // ---------- 縮成一個小圓點 ----------
 var ylpDotMode = false;
 var ylpDotPos = null; // { left, top }
@@ -230,6 +258,11 @@ function ylpDotEl() {
   };
   dot.addEventListener('pointerup', up);
   dot.addEventListener('pointercancel', () => { down = false; });
+  dot.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    if (!lyricsPanel) ylpRemoveSuggestDot(); // 建議用的圓點：按右鍵關掉
+    else ylpExitDot(true);                   // 面板縮成的圓點：按右鍵也是展開
+  });
   dot.addEventListener('mouseenter', () => { ylpDotHover = true; ylpApplyDotTransparency(); });
   dot.addEventListener('mouseleave', () => { ylpDotHover = false; ylpApplyDotTransparency(); });
   document.body.appendChild(dot);
@@ -272,6 +305,25 @@ function ylpEnterDot() {
   else ylpPlaceDot(r.right - 44, r.top);
 }
 
+// 偵測到音樂影片時，只出現一顆小圓點（不打開面板），點一下才打開歌詞
+function ylpShowSuggestDot() {
+  if (lyricsPanel || ylpKaraokeActive) return;
+  ylpDotMode = true;
+  const dot = ylpDotEl();
+  dot.classList.add('suggest');
+  dot.title = '偵測到音樂：點一下打開歌詞（可以拖曳；按右鍵關掉）';
+  if (ylpDotPos) ylpPlaceDot(ylpDotPos.left, ylpDotPos.top);
+  else ylpPlaceDot(window.innerWidth - 20 - 44, 80);
+}
+
+// 只收起「建議用」的圓點（歌詞面板縮成圓點時不動）
+function ylpRemoveSuggestDot() {
+  if (lyricsPanel) return;
+  const dot = document.getElementById('ylp-dot');
+  if (dot) dot.remove();
+  ylpDotMode = false;
+}
+
 // expand＝true：展開成一般的完整歌詞面板
 function ylpExitDot(expand) {
   const dot = document.getElementById('ylp-dot');
@@ -288,7 +340,7 @@ function ylpExitDot(expand) {
   if (isMinimized) document.getElementById('minimize-btn')?.click(); // 展開成完整歌詞
   // 面板的右上角對齊圓點，並確保整個面板在畫面內
   if (ylpDotPos) {
-    const w = panel.offsetWidth || 380;
+    const w = panel.offsetWidth || 400;
     const left = Math.max(0, Math.min(window.innerWidth - w, ylpDotPos.left + 44 - w));
     const top = Math.max(0, Math.min(window.innerHeight - 120, ylpDotPos.top));
     panel.style.left = left + 'px';
@@ -300,7 +352,7 @@ function ylpExitDot(expand) {
 }
 
 // ---------- 調整面板大小（字跟著縮放） ----------
-const YLP_PANEL_BASE_W = 380;
+const YLP_PANEL_BASE_W = 400;
 
 function ylpApplyPanelSize(panel, w, h) {
   if (!panel) return;
@@ -490,10 +542,10 @@ function ylpApplyTheme() {
     ${P} .progress-box-filled { background: ${A} !important; border-color: ${A} !important; }
     ${P} .lyrics-content::-webkit-scrollbar-thumb { background: ${ylpRgba(T, 0.25)} !important; }
     ${P} .lyrics-content::-webkit-scrollbar-track { background: ${ylpRgba(T, 0.05)} !important; }
-    ${P} .lyrics-header { padding-left: 12px !important; padding-right: 12px !important; gap: 6px; }
-    ${P} .lyrics-controls { gap: 5px !important; }
-    ${P} .lyrics-controls .lyrics-btn { width: 26px !important; height: 26px !important; }
-    ${P} { width: var(--ylp-w, 380px) !important; }
+    ${P} .lyrics-header { padding-left: 10px !important; padding-right: 10px !important; gap: 5px; }
+    ${P} .lyrics-controls { gap: 3px !important; }
+    ${P} .lyrics-controls .lyrics-btn { width: 25px !important; height: 26px !important; }
+    ${P} { width: var(--ylp-w, 400px) !important; }
     ${P}.ylp-sized:not(.minimized) { height: var(--ylp-h) !important; max-height: calc(100vh - 16px) !important; }
     ${P} .lyrics-content { font-size: calc(14px * var(--ylp-fs, 1)) !important; }
     ${P} .synced-line.active { font-size: calc(15px * var(--ylp-fs, 1)) !important; }
@@ -559,6 +611,17 @@ function ylpApplyTheme() {
     @media (prefers-reduced-motion: reduce) {
       ${P} .ylp-eq span, ${P} .ylp-dots i, ${P} .progress-box-current, #ylp-dot .ylp-dot-eq i { animation: none; }
     }
+    ${P} .ylp-toast {
+      position: absolute; left: 12px; right: 12px; bottom: 14px; z-index: 6; padding: 8px 12px; border-radius: 10px;
+      font-size: 12px; line-height: 1.5; text-align: center; color: ${onAccent} !important; background: ${ylpRgba(A, 0.92)};
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3); transition: opacity 0.4s; pointer-events: none;
+    }
+    ${P} .ylp-toast.hide { opacity: 0; }
+    ${P} .ylp-nf-actions { display: flex; gap: 8px; }
+    ${P} .ylp-nf-actions .manual-search-button { flex: 1; width: auto !important; margin: 0 !important; white-space: nowrap; font-size: 13px !important; padding: 10px 6px !important; }
+    ${P} .ylp-auto-retry-btn { background: ${ylpRgba(T, 0.14)} !important; color: ${T} !important; }
+    ${P} .ylp-auto-retry-btn:hover { background: ${ylpRgba(T, 0.24)} !important; filter: none !important; }
+    ${P} .ylp-field-label { display: block; font-size: 12px; margin: 0 0 6px; color: ${ylpRgba(T, 0.75)} !important; }
     ${P} .ylp-search-bar { display: flex; gap: 6px; padding: 8px 12px; flex-shrink: 0; border-bottom: 1px solid ${ylpRgba(T, 0.12)}; }
     ${P} .ylp-search-bar[hidden] { display: none; }
     ${P} .ylp-search-input {
@@ -573,14 +636,19 @@ function ylpApplyTheme() {
     }
     ${P} .ylp-search-go:disabled { opacity: 0.6; cursor: default; }
     ${P} #ylp-search-btn.on { background: ${ylpRgba(A, 0.3)} !important; }
-    ${P} .ylp-offset-ctl { display: flex; align-items: center; gap: 3px; cursor: default; }
+    ${P} .ylp-offset-ctl { display: flex; align-items: center; gap: 2px; cursor: default; }
     ${P} .ylp-off-btn {
       height: 26px; min-width: 24px; border: 0; border-radius: 6px; padding: 0 5px; cursor: pointer;
       font: inherit; font-size: 14px; font-weight: 700; line-height: 26px;
       color: ${T} !important; background: ${ylpRgba(T, 0.12)} !important;
     }
     ${P} .ylp-off-btn:hover { background: ${ylpRgba(T, 0.24)} !important; }
-    ${P} .ylp-offset-val { min-width: 44px; font-size: 11px !important; font-variant-numeric: tabular-nums; }
+    ${P} .ylp-off-step {
+      height: 26px; max-width: 54px; padding: 0 1px; border-radius: 6px; cursor: pointer; font: inherit; font-size: 11px;
+      color: ${T} !important; background: ${ylpRgba(T, 0.12)} !important; border: 1px solid ${ylpRgba(T, 0.15)} !important;
+    }
+    ${P} .ylp-off-step option { color: #111; background: #fff; }
+    ${P} .ylp-offset-val { min-width: 42px; font-size: 11px !important; font-variant-numeric: tabular-nums; }
     ${P} .ylp-offset-val.moved { color: ${A} !important; background: ${ylpRgba(A, 0.18)} !important; }
   `;
 }
@@ -642,6 +710,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   ylpUpdateTranslateButton();
   ylpApplyTranslations();
   if ('karaokeWipe' in changes) ylpKaraokeRender(true);
+  if ('offsetStep' in changes) ylpUpdateOffsetUI();
   if ('ccSubs' in changes || 'ccSize' in changes || 'translate' in changes || 'targetLang' in changes) { ylpUpdateCcButton(); ylpCcRender(true); }
   if ('miniTransparency' in changes) ylpApplyMiniTransparency();
   if ('miniTransparency' in changes || 'dotFollowBar' in changes || 'dotTransparency' in changes) ylpApplyDotTransparency();
@@ -844,6 +913,17 @@ var YLP_KARAOKE_CSS = `
     cursor: pointer;
   }
   #ylp-karaoke-overlay .ylp-off-btn:hover { background: rgba(255, 255, 255, 0.3); }
+  #ylp-karaoke-overlay .ylp-off-step {
+    border: 0;
+    border-radius: 999px;
+    padding: 5px 8px;
+    background: rgba(255, 255, 255, 0.15);
+    color: #fff;
+    font: inherit;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  #ylp-karaoke-overlay .ylp-off-step option { color: #111; background: #fff; }
   #ylp-karaoke-overlay .ylp-offset-val { min-width: 64px; font-size: 14px; font-variant-numeric: tabular-nums; }
   #ylp-karaoke-overlay .ylp-offset-val.moved { color: var(--ylp-k-accent, #5ec8ff); }
   html.ylp-idle #ylp-karaoke-overlay .ylp-k-offset { opacity: 0; pointer-events: none; }
@@ -1311,6 +1391,7 @@ function ylpOpenEditor(prefillOverride) {
     lyricsPanel.classList.remove('minimized');
     isMinimized = false;
     ylpKeepMinimized = false;
+    ylpUpdateMinimizeIcon();
   }
   ylpStopTap();
 
@@ -1451,15 +1532,52 @@ function ylpDownloadLrc(lrc) {
   setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
 
-async function ylpFinishLocal(lines) {
+// direct＝true（打點完成）：不跳確認畫面，直接用目前的歌名、歌手儲存
+async function ylpFinishLocal(lines, direct) {
   const lrc = ylpLinesToLrc(lines);
+  const msgBox = () => document.querySelector('#lyrics-extension-panel .ylp-ed-msg') || (ylpTap && ylpTap.head);
   if (!currentVideoId) {
-    const box = document.querySelector('#lyrics-extension-panel .ylp-ed-msg') || (ylpTap && ylpTap.head);
+    const box = msgBox();
     if (box) box.textContent = '找不到這部影片的 ID，無法儲存。請重新整理頁面後再試。';
     return;
   }
+  if (!direct) {
+    ylpStopTap();
+    ylpConfirmSave(lrc);
+    return;
+  }
+  // 歌名、歌手：這部影片之前存過就沿用，否則用自動辨識的（之後可以在歌詞庫「改名稱」）
+  let meta = ylpCurrentMeta();
+  let title = '';
+  try { title = getVideoTitle() || ''; } catch (e) { /* 忽略 */ }
+  try {
+    const old = (await chrome.storage.local.get(ylpLocalKey(currentVideoId)))[ylpLocalKey(currentVideoId)];
+    if (old && (old.song || old.artist)) meta = { song: old.song || meta.song, artist: old.artist || meta.artist };
+  } catch (e) { /* 忽略 */ }
+  const song = (meta.song || title || '未命名歌曲').trim();
+  const artist = (meta.artist || '').trim();
+  try {
+    await ylpSaveLocal(currentVideoId, lrc, artist, song, title);
+  } catch (e) {
+    const box = msgBox();
+    if (box) box.textContent = '儲存失敗：' + (String(e && e.message || e).includes('QUOTA') ? '儲存空間已滿，請先到歌詞庫刪除一些不用的歌。' : String(e && e.message || e));
+    return; // 打點資料還在，可以再按「完成並儲存」
+  }
   ylpStopTap();
-  ylpConfirmSave(lrc);
+  ylpSetOffset(0); // 新存的歌詞時間已經是對的，微調歸零
+  displayLyrics({ lyrics: lrc, synced: true, source: '本機歌詞', artist, song }, false);
+  ylpToast('✅ 已儲存同步歌詞。歌名、歌手可以到「📚 歌詞庫」修改');
+}
+
+// 面板上方短暫顯示一行提示
+function ylpToast(text) {
+  const panel = document.getElementById('lyrics-extension-panel');
+  if (!panel) return;
+  panel.querySelector('.ylp-toast')?.remove();
+  const t = ylpEl('div', 'ylp-toast', text);
+  panel.appendChild(t);
+  setTimeout(() => t.classList.add('hide'), 3500);
+  setTimeout(() => t.remove(), 4000);
 }
 
 // 儲存前確認歌名與歌手（自動辨識有時會錯，這裡可以修正；歌詞庫與分享給朋友時都會用到）
@@ -1703,7 +1821,7 @@ function ylpTapFinish() {
     if (Number.isFinite(prev.end) && prev.end > cur.time) prev.end = cur.time - prev.time >= YLP_TAP_MIN_HOLD ? cur.time : undefined;
     if (Number.isFinite(cur.end) && cur.end <= cur.time) cur.end = undefined;
   }
-  ylpFinishLocal(out);
+  ylpFinishLocal(out, true); // 打點完成直接儲存，不用再確認
 }
 
 function ylpTapRefresh() {
@@ -1866,6 +1984,45 @@ function isLikelyMusicVideo(title, channelName) {
   
   console.log('⏸️ No music video keywords found');
   return false;
+}
+
+// 判斷要不要顯示「偵測到音樂」的小圓點
+// 依序看：YouTube 自己的影片分類是不是「音樂」、說明欄有沒有「音樂」區塊、標題與頻道關鍵字
+async function ylpCheckMusicForDot(videoId, title, channelName, keywordMusic) {
+  let category = '';
+  for (let i = 0; i < 3 && !category; i++) {
+    const info = await ylpPageRequest('getInfo', {}, 1500);
+    if (info && info.videoId === videoId) category = info.category || '';
+    else await new Promise((r) => setTimeout(r, 800)); // 播放器還沒換成新影片，等一下再問
+  }
+  if (currentVideoId !== videoId || lyricsPanel) return; // 已經換歌或已經打開歌詞
+  let musicSection = false;
+  try { musicSection = !!getMusicInfoFromMusicSection(); } catch (e) { /* 忽略 */ }
+  const extraKeywords = /(^|[\s\[【(（|｜])(m\/?v|mv)([\s\]】)）|｜]|$)|music video|lyric|官方|主題曲|主题曲|片頭曲|片尾曲|插曲|\bost\b|翻唱|\bcover\b|\bfeat\.?|\bft\.|歌ってみた|커버|뮤직비디오/i;
+  const isMusic = category === 'Music' || musicSection || keywordMusic || extraKeywords.test(title);
+  const instrumental = ylpIsInstrumental(title, channelName);
+  console.log('🎵 小圓點判斷：分類=' + (category || '?') + ' 音樂區塊=' + musicSection + ' 關鍵字=' + keywordMusic + ' 純音樂=' + instrumental);
+  if (isMusic && !instrumental && smartAutoShow) ylpShowSuggestDot();
+  else ylpRemoveSuggestDot();
+}
+
+// 純音樂（沒有人聲、沒有歌詞）的影片：不顯示「偵測到音樂」的小圓點
+const YLP_INSTRUMENTAL_PATTERNS = [
+  /\binstrumentals?\b/i, /\binst\b\.?/i, /\boff[\s-]?vocal\b/i, /\bno vocals?\b/i, /\bbacking track\b/i,
+  /\b(piano|guitar|violin|cello|flute|sax(ophone)?|harp|erhu|guzheng|ukulele|marimba|orchestra(l)?)\s*(cover|version|ver\.?|solo|arrangement|instrumental)\b/i,
+  /\bmusic ?box\b/i, /\blo-?fi\b/i, /\b(relaxing|study|sleep|calm|focus|meditation|healing|spa|cafe|coffee shop|background)\s+music\b/i,
+  /\bambient\b/i, /\bwhite noise\b/i, /\bbgm\b/i, /\b\d+\s*(hours?|hrs?)\b/i,
+  /純音樂|纯音乐|伴奏|純樂器|演奏版|演奏曲|鋼琴版|钢琴版|鋼琴曲|钢琴曲|鋼琴演奏|钢琴演奏|古箏|古筝|二胡|琵琶|笛子|小提琴|大提琴|吉他演奏|八音盒|音樂盒|音乐盒|輕音樂|轻音乐|背景音樂|背景音乐|白噪音|助眠|冥想/,
+  /インスト|オルゴール|ピアノ(ver|バージョン|アレンジ|ソロ|演奏)|演奏してみた|弾いてみた/,
+  /연주|피아노\s*(커버|버전|ver)|반주/,
+];
+
+function ylpIsInstrumental(title, channelName) {
+  const t = String(title || '');
+  const c = String(channelName || '');
+  if (YLP_INSTRUMENTAL_PATTERNS.some((re) => re.test(t))) return true;
+  // 頻道本身就是純音樂頻道（例如鋼琴、輕音樂、Lo-fi 頻道）
+  return /\b(piano|lo-?fi|instrumental|relaxing|sleep music|music box)\b/i.test(c) || /鋼琴|钢琴|純音樂|纯音乐|輕音樂|轻音乐/.test(c);
 }
 
 // Settings state
@@ -2540,6 +2697,9 @@ class TitleCleaner {
   }
   
   parseArtistAndSong(title, channelName = '', isCover = false) {
+    // 【】裡如果只是「MV」「官方完整版」「動態歌詞」這類註記，先拿掉，不要當成歌名或歌手
+    const NOTE = /^(官方|完整版|高畫質|高音質|動態歌詞|歌詞|字幕|中字|首播|預告|官方版|正式版|official|mv|m\/v|music video|lyrics?|lyric video|audio|hd|hq|4k|live|teaser|preview|ktv|karaoke)/i;
+    title = title.replace(/【([^】]*)】/g, (m, inner) => (NOTE.test(inner.trim()) ? ' ' : m)).replace(/\s{2,}/g, ' ').trim();
     let artistFromTitle = '';
     let artistFromChannel = this.cleanChannelName(channelName);
     let song = '';
@@ -2570,6 +2730,26 @@ class TitleCleaner {
           : prefix;
         song = quotedMatch[2].trim();
         console.log('🎯 Parsed quoted song title with artist prefix');
+      }
+    }
+    
+    // 華語常見格式：歌手中文名 英文名 -【歌名】、周杰倫JayChou【龍捲風】
+    if (!song) {
+      const bm = title.match(/^(.*?)【([^】]+)】(.*)$/);
+      if (bm) {
+        const prefix = bm[1].replace(/[\s\-–—|:：_~～]+$/, '').trim();
+        const inner = bm[2].trim();
+        const rest = bm[3].replace(/^[\s\-–—|:：_~～]+/, '').trim();
+        if (prefix && inner) {
+          artistFromTitle = prefix;
+          song = inner;
+          console.log('🎯 Parsed 【歌名】 with artist prefix');
+        } else if (!prefix && inner && rest) {
+          // 【歌手】歌名 的寫法
+          artistFromTitle = inner;
+          song = rest.replace(/[\(\[（【].*$/, '').trim() || rest;
+          console.log('🎯 Parsed 【歌手】 song');
+        }
       }
     }
     
@@ -2660,7 +2840,10 @@ class TitleCleaner {
       song, 
       originalTitle: title,
       isCover,
-      language
+      language,
+      // 中英文並列的名字拆開來各搜一次（例如「周杰倫JayChou」→「周杰倫」「Jay Chou」）
+      artistAliases: ylpNameAliases(artistFromTitle),
+      songAliases: ylpNameAliases(song),
     };
   }
   
@@ -2881,6 +3064,20 @@ class TitleCleaner {
       }
     }
     
+    // 中英文並列名稱的組合（優先順序排在「完全照標題」之後）
+    const seen = new Set(variations.map((v) => v.artist + '|' + v.song));
+    const addVar = (artist, s, priority, label, source) => {
+      const key = artist + '|' + s;
+      if (!s || seen.has(key)) return;
+      seen.add(key);
+      variations.push({ artist, song: s, source, priority, label });
+    };
+    const aAliases = [artistFromTitle, ...(parsedData.artistAliases || [])].filter(Boolean);
+    const sAliases = [songClean, ...(parsedData.songAliases || [])].filter(Boolean);
+    let n = 0;
+    for (const a of aAliases) for (const sn of sAliases) if (n++ < 8) addVar(a, sn, 1.5, 'alias', 'title-artist');
+    for (const sn of (parsedData.songAliases || [])) addVar('', sn, 4.5, 'alias-song-only', 'song-only');
+    
     variations.sort((a, b) => a.priority - b.priority);
     
     console.log(`✅ Generated ${variations.length} ranked variations`);
@@ -2890,6 +3087,27 @@ class TitleCleaner {
   removeEmojis(text) {
     return text.replace(this.patterns.emojis, '').replace(/\s{2,}/g, ' ').trim();
   }
+}
+
+// 名字裡同時有中日韓文字和英文時，拆成各自的版本（不含原本的寫法）
+// 「高爾宣 OSN」→「高爾宣」「OSN」；「周杰倫JayChou」→「周杰倫」「Jay Chou」「JayChou」
+function ylpNameAliases(name) {
+  const s = String(name || '').replace(/[()（）\[\]]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!s) return [];
+  const CJK = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
+  if (!CJK.test(s) || !/[A-Za-z]/.test(s)) return [];
+  const out = new Set();
+  const cjk = (s.match(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}][\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\s]*/gu) || [])
+    .map((x) => x.trim()).filter(Boolean);
+  const latin = s.replace(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]+/gu, ' ').replace(/\s+/g, ' ').trim();
+  if (cjk[0]) out.add(cjk[0]);
+  if (latin && /[A-Za-z]{2,}/.test(latin)) {
+    out.add(latin);
+    const spaced = latin.replace(/([a-z])([A-Z])/g, '$1 $2'); // JayChou → Jay Chou
+    if (spaced !== latin) out.add(spaced);
+  }
+  out.delete(s);
+  return [...out];
 }
 
 const titleCleaner = new TitleCleaner();
@@ -3018,6 +3236,29 @@ function getMusicInfoFromMusicSection() {
 // LYRICS SOURCES
 // ============================================================================
 
+// 網路請求加上逾時（原本沒有逾時，某個網站很慢時整個搜尋會卡住好幾分鐘）
+// 同一次搜尋中，相同網址只請求一次
+var ylpFetchMemo = new Map();
+var ylpSearchGen = 0; // 每開始一次新的搜尋就 +1，舊的搜尋結果不再顯示
+function ylpFetchJson(url, timeoutMs = 8000) {
+  if (ylpFetchMemo.has(url)) return ylpFetchMemo.get(url);
+  const p = (async () => {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+      const r = await fetch(url, { signal: ctrl.signal });
+      if (!r.ok) return null;
+      return await r.json();
+    } catch (e) {
+      return null; // 逾時或網路錯誤：當作沒有結果
+    } finally {
+      clearTimeout(timer);
+    }
+  })();
+  ylpFetchMemo.set(url, p);
+  return p;
+}
+
 async function searchLRCLIB(artist, song) {
   try {
     const searches = [
@@ -3035,11 +3276,7 @@ async function searchLRCLIB(artist, song) {
     
     for (const url of searches) {
       console.log('🔍 LRCLIB searching:', url);
-      const response = await fetch(url);
-      
-      if (!response.ok) continue;
-      
-      const results = await response.json();
+      const results = await ylpFetchJson(url, 8000);
       
       if (results && results.length > 0) {
         // 挑選結果：有指定歌手時，只接受歌手名稱相符的結果（原本會直接拿第一筆，
@@ -3098,15 +3335,9 @@ async function searchLyricsOVH(artist, song) {
     const url = `https://api.lyrics.ovh/v1/${encodeURIComponent(artist)}/${encodeURIComponent(song)}`;
     console.log('🔍 Lyrics.ovh searching:', url);
     
-    const response = await fetch(url);
+    const data = await ylpFetchJson(url, 6000);
     
-    if (!response.ok) {
-      throw new Error('Lyrics.ovh 連線失敗');
-    }
-    
-    const data = await response.json();
-    
-    if (data.lyrics) {
+    if (data && data.lyrics) {
       console.log('✅ Lyrics.ovh found lyrics');
       return {
         lyrics: data.lyrics,
@@ -3130,6 +3361,8 @@ async function searchAllSources(parsedData) {
   
   const variations = titleCleaner.generateSearchVariations(parsedData);
   console.log('🔄 Generated', variations.length, 'search variations');
+  ylpFetchMemo = new Map();
+  const myGen = parsedData._gen || ylpSearchGen;
   
   // Track which major search phases we've tried
   let boxesFilled = {
@@ -3141,6 +3374,7 @@ async function searchAllSources(parsedData) {
   };
   
   for (let i = 0; i < variations.length; i++) {
+    if (myGen !== ylpSearchGen) throw new Error('已改用新的搜尋'); // 使用者開始了新的搜尋，這次的就停下來
     const variant = variations[i];
     console.log(`📍 Trying variation ${i + 1}/${variations.length} (${variant.label}):`, { artist: variant.artist, song: variant.song });
     
@@ -3219,7 +3453,7 @@ function createLyricsPanel() {
         position: fixed;
         top: 80px;
         right: 20px;
-        width: 380px;
+        width: 400px;
         max-height: 70vh;
         background: ${darkModeEnabled ? 'rgba(28, 28, 30, 0.95)' : 'rgba(255, 255, 255, 0.95)'};
         backdrop-filter: blur(20px) saturate(180%);
@@ -3584,7 +3818,7 @@ function createLyricsPanel() {
           <span style="font-size: 9px; line-height: 1;">●</span>
         </button>
         <button class="lyrics-btn" id="minimize-btn" title="縮小">
-          <span style="font-size: 16px; line-height: 1;">−</span>
+          <span class="ylp-min-icon" style="font-size: 16px; line-height: 1;">−</span>
         </button>
         <button class="lyrics-btn" id="close-btn" title="關閉">
           <span style="font-size: 16px; line-height: 1;">×</span>
@@ -3610,6 +3844,7 @@ function createLyricsPanel() {
     isMinimized = true;
   }
   if (ylpDotMode) panel.classList.add('ylp-dotted'); // 換歌時維持小圓點
+  setTimeout(ylpUpdateMinimizeIcon, 0);
   ylpPanelHover = false;
   ylpApplyMiniTransparency();
   
@@ -3629,6 +3864,7 @@ function createLyricsPanel() {
     panel.classList.toggle('minimized');
     isMinimized = panel.classList.contains('minimized');
     ylpKeepMinimized = isMinimized;
+    ylpUpdateMinimizeIcon();
     ylpApplyMiniTransparency();
     
     if (window.analytics) {
@@ -3662,6 +3898,14 @@ function createLyricsPanel() {
   document.getElementById('edit-btn').addEventListener('click', () => ylpOpenEditor());
   ylpSetupHeaderSearch(panel);
   document.getElementById('ylp-dot-btn').addEventListener('click', () => ylpEnterDot());
+  // 在面板上按右鍵：折疊（縮成一條標題列）／展開，和按「−」一樣
+  // 輸入框、編輯與打點畫面保留原本的右鍵選單；按住 Shift 再按右鍵也會出現瀏覽器原本的選單
+  panel.addEventListener('contextmenu', (e) => {
+    if (e.shiftKey) return;
+    if (e.target.closest('input, textarea, select, .ylp-editor, .ylp-tap')) return;
+    e.preventDefault();
+    document.getElementById('minimize-btn')?.click();
+  });
   ylpSetupResize(panel);
   document.getElementById('ylp-cc-btn').addEventListener('click', () => {
     chrome.storage.sync.set({ ccSubs: !ylpSettings.ccSubs });
@@ -3725,11 +3969,13 @@ function makeDraggable(element, header) {
 }
 
 async function detectAndShowLyrics() {
+  let gen = -1;
   try {
     console.log('🎬 Detecting song from YouTube...');
     
     // PROGRESS: Reset progress
     resetProgress();
+    gen = ++ylpSearchGen; // 這次搜尋的編號；之後如果開始別的搜尋，這次的結果就不顯示
     
     const rawTitle = getVideoTitle();
     const channelName = getChannelName();
@@ -3758,6 +4004,7 @@ async function detectAndShowLyrics() {
     
     // Boxes 1-2 filled during cleaning/parsing
     const parsedData = titleCleaner.clean(rawTitle, channelName, isCover);
+    parsedData._gen = gen;
     
     if (!lyricsPanel) {
       lyricsPanel = createLyricsPanel();
@@ -3784,6 +4031,7 @@ async function detectAndShowLyrics() {
     if (localResult) {
       isRefreshRequest = false;
       fillAllBoxes('✓ 本機歌詞');
+      if (gen !== ylpSearchGen) return;
       displayLyrics(localResult, false);
       return;
     }
@@ -3792,6 +4040,7 @@ async function detectAndShowLyrics() {
     if (songMatch) {
       isRefreshRequest = false;
       fillAllBoxes('✓ 本機歌詞（別的影片）');
+      if (gen !== ylpSearchGen) return;
       displayLyrics(songMatch, false);
       return;
     }
@@ -3803,6 +4052,7 @@ async function detectAndShowLyrics() {
         console.log('💾 Using cached lyrics - skipping search');
         fillAllBoxes('✓ 從快取載入');
         await new Promise(resolve => setTimeout(resolve, 150)); // Brief visual feedback
+        if (gen !== ylpSearchGen) return;
         displayLyrics(cachedResult, true);
         return;
       }
@@ -3820,6 +4070,8 @@ async function detectAndShowLyrics() {
       console.log('📊 Confidence score:', confidence.toFixed(2));
       
       await saveLyricsToCache(videoId, result, parsedData, channelName, confidence);
+      
+      if (gen !== ylpSearchGen) return;
       
       displayLyrics(result, false);
       return;
@@ -3848,6 +4100,8 @@ async function detectAndShowLyrics() {
         const confidence = calculateConfidence(musicParsed, result, true);
         await saveLyricsToCache(videoId, result, musicParsed, channelName, confidence);
         
+        if (gen !== ylpSearchGen) return;
+        
         displayLyrics(result, false);
         return;
       }
@@ -3857,6 +4111,7 @@ async function detectAndShowLyrics() {
     
   } catch (error) {
     console.error('❌ Error:', error);
+    if (gen !== -1 && gen !== ylpSearchGen) return; // 已經有新的搜尋在進行
     
     // Fill all boxes on failure
     fillAllBoxes('✗ 找不到');
@@ -3880,11 +4135,12 @@ async function detectAndShowLyrics() {
               <span>🔍</span>
               <span>手動搜尋</span>
             </div>
+            <label class="ylp-field-label" for="ylp-nf-input">輸入「歌手 - 歌名」</label>
             <input 
               type="text" 
               class="manual-search-input" 
-              placeholder="歌手 - 歌名"
-              id="manual-search-input-${Date.now()}"
+              aria-label="歌手 - 歌名"
+              id="ylp-nf-input"
               name="no-autofill-error-${Date.now()}"
               autocomplete="new-password"
               autocorrect="off"
@@ -3894,7 +4150,10 @@ async function detectAndShowLyrics() {
               data-form-type="other"
               data-lpignore="true"
             />
-            <button class="manual-search-button" id="manual-search-btn-${Date.now()}">重新搜尋</button>
+            <div class="ylp-nf-actions">
+              <button class="manual-search-button" id="manual-search-btn-${Date.now()}">搜尋這首</button>
+              <button class="manual-search-button ylp-auto-retry-btn" title="清除這部影片的暫存，照影片標題重新自動找一次">🔄 重新自動搜尋</button>
+            </div>
             <div class="manual-search-hint">
               💡 請輸入完整的歌手與歌名
             </div>
@@ -3906,6 +4165,13 @@ async function detectAndShowLyrics() {
       `;
       
       setupManualSearchBySelector('.manual-search-box', false);
+      content.querySelector('.ylp-auto-retry-btn')?.addEventListener('click', async () => {
+        // 不用暫存，照影片標題從頭自動搜尋一次（網路不穩、資料庫剛更新時有用）
+        try { if (currentVideoId) await clearCachedLyrics(currentVideoId); } catch (e) { /* 忽略 */ }
+        isRefreshRequest = true;
+        resetProgress();
+        detectAndShowLyrics();
+      });
       content.querySelector('.ylp-web-search-btn')?.addEventListener('click', () => {
         ylpWebSearchLyrics();
         ylpOpenEditor();
@@ -3978,6 +4244,7 @@ function setupManualSearchDynamic(input, button, cancelLoading = false) {
     if (!manualQuery) return;
     
     console.log('🔍 Manual search:', manualQuery);
+    ylpSearchGen++; // 停止還在進行的自動搜尋，避免它之後蓋掉手動搜尋的結果
     
     button.disabled = true;
     button.textContent = '⏳ 搜尋中...';
@@ -4282,6 +4549,7 @@ function observeVideoChanges() {
     const keepLyricsOpen = !!lyricsPanel || ylpKaraokeActive;
     // 換歌前面板是縮小（折疊）的，新面板也維持縮小
     ylpKeepMinimized = !!lyricsPanel && isMinimized;
+    if (!lyricsPanel) ylpRemoveSuggestDot(); // 上一部影片的建議圓點先收起來，確認是音樂再出現
     const previousTitle = ylpLastVideoTitle;
     let titleChecks = 0;
     ylpLyricsState = 'searching';
@@ -4358,21 +4626,21 @@ function observeVideoChanges() {
         // 不再自動跳出歌詞：只有按工具列上的外掛圖示時才顯示。
         // 例外：歌詞面板本來就開著時，換下一首會自動找新歌的歌詞。
         const shouldAutoShow = keepLyricsOpen;
-        const shouldShowTooltip = false;
         
         if (shouldAutoShow) {
           setTimeout(() => {
             detectAndShowLyrics();
           }, 1000);
-        } else if (shouldShowTooltip) {
-          setTimeout(() => {
-            showLyricsTooltip();
-          }, 2000);
+        } else if (smartAutoShow) {
+          // 音樂影片：出現小圓點，點了才打開歌詞（純音樂除外）
+          ylpCheckMusicForDot(newVideoId, title, channelName, isMusicVideo);
+        } else {
+          ylpRemoveSuggestDot();
         }
       }
     }, 500);
     
-    setTimeout(() => clearInterval(checkTitle), 10000);
+    setTimeout(() => clearInterval(checkTitle), 20000); // 網路慢時多等一下
   }
 }
 
@@ -4381,6 +4649,7 @@ new MutationObserver(() => {
   const url = location.href;
   if (url !== lastUrl) {
     lastUrl = url;
+    if (!/[?&]v=/.test(location.search)) ylpRemoveSuggestDot(); // 離開影片頁時收起建議圓點
     observeVideoChanges();
   }
 }).observe(document, { subtree: true, childList: true });
@@ -4421,6 +4690,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   if (request.action === 'updateSmartAutoShow') {
     smartAutoShow = request.enabled;
+    if (!smartAutoShow) ylpRemoveSuggestDot();
     console.log('🎯 Smart auto-show updated:', smartAutoShow);
     sendResponse({ success: true });
   }
