@@ -25,7 +25,7 @@ function ylpOffsetLabel(v) {
   return (v > 0 ? '提早 ' : '延後 ') + Math.abs(v).toFixed(1) + ' 秒';
 }
 
-const YLP_SOURCE_LABEL = { mine: '自己做的', imported: '匯入', bundled: '安裝包附的' };
+const YLP_SOURCE_LABEL = { mine: '自己做的', tuned: '調過時間', found: '網路找到的', imported: '匯入', bundled: '安裝包附的' };
 
 function el(tag, props, children) {
   const e = document.createElement(tag);
@@ -124,7 +124,7 @@ function ylpRender() {
         el('button', { class: 'small danger', text: '刪除', onclick: () => ylpDelete([e]) }),
       ];
 
-    const src = el('span', { class: 'chip' + (e.source === 'mine' ? ' mine' : ''), text: YLP_SOURCE_LABEL[e.source] || '自己做的' });
+    const src = el('span', { class: 'chip' + (e.source === 'mine' || e.source === 'tuned' ? ' mine' : ''), text: YLP_SOURCE_LABEL[e.source] || '自己做的' });
     tbody.append(el('tr', null, [
       el('td', null, [cb]),
       songCell,
@@ -242,4 +242,13 @@ chrome.storage.onChanged.addListener((changes, area) => {
 chrome.storage.sync.get({ darkMode: true }, (s) => {
   document.body.classList.toggle('dark', s.darkMode !== false);
 });
-ylpLoad();
+// 打開歌詞庫時，先把以前找過、還沒收進來的同步歌詞補收進來
+(async () => {
+  try {
+    const n = await ylpLibAdoptCached();
+    if (n) ylpMsg(`已把以前找過的 ${n} 首歌補收進歌詞庫。`, 'ok');
+  } catch (e) {
+    ylpMsg('補收以前找過的歌時發生錯誤：' + ((e && e.message) || e), 'err');
+  }
+  await ylpLoad();
+})();

@@ -895,21 +895,22 @@
             <div class="toggle-slider"></div>
           </div>
         </div>
-        <div class="setting-row" id="miniTransparencyRow">
+        <div class="setting-row" id="lyricsDisplayRow">
           <div class="setting-info">
-            <div class="setting-label">縮小列透明度 <span id="miniTransparencyValue">0%</span></div>
-            <div class="setting-description">歌詞面板縮小後的透明程度，滑鼠移上去會恢復</div>
-            <input type="range" id="miniTransparency" min="0" max="90" step="5" class="range">
+            <div class="setting-label">字幕顯示方式</div>
+            <div class="setting-description">歌詞面板、卡拉OK、影片字幕都適用；沒有譯文的句子或關掉翻譯時，仍會顯示原文</div>
+          </div>
+          <div class="language-selector">
+            <select id="lyricsDisplaySelect" aria-label="字幕顯示方式">
+              <option value="both">原文＋翻譯</option>
+              <option value="translation">只顯示翻譯</option>
+            </select>
           </div>
         </div>
         <div class="setting-row block" id="dotTransparencyRow">
           <div class="setting-info">
             <div class="setting-label">小圓點透明度 <span id="dotTransparencyValue" class="value-tag">0%</span></div>
-            <div class="setting-description">按標題列的 ● 縮成小圓點後的透明程度，滑鼠移上去會恢復</div>
-            <div class="dot-follow">
-              <span>跟隨縮小列透明度</span>
-              <div class="toggle-switch" id="dotFollowToggle"><div class="toggle-slider"></div></div>
-            </div>
+            <div class="setting-description">按標題列的 ● 或在面板上按右鍵縮成小圓點後的透明程度，滑鼠移上去會恢復</div>
             <input type="range" id="dotTransparency" min="0" max="90" step="5" class="range">
           </div>
         </div>

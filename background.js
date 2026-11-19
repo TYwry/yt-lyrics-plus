@@ -24,10 +24,20 @@ async function ylpImportBundled() {
     console.warn('[歌詞庫] 安裝包歌詞讀取失敗：', e.message);
   }
 }
-chrome.runtime.onStartup.addListener(() => { ylpImportBundled(); });
+// 以前找過、還留在歌詞快取裡的同步歌詞，補收進歌詞庫
+async function ylpAdoptCachedSafe() {
+  try {
+    const n = await ylpLibAdoptCached();
+    if (n) console.log('[歌詞庫] 補收以前找過的歌：' + n + ' 首');
+  } catch (e) {
+    console.warn('[歌詞庫] 補收以前找過的歌失敗：', (e && e.message) || e);
+  }
+}
+chrome.runtime.onStartup.addListener(() => { ylpImportBundled(); ylpAdoptCachedSafe(); });
 
 chrome.runtime.onInstalled.addListener((details) => {
   ylpImportBundled();
+  ylpAdoptCachedSafe();
   if (details.reason !== 'install') return;
   chrome.storage.sync.set({
     autoShowLyrics: false,  // 所有影片都自動顯示：預設關

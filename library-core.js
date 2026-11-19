@@ -2,7 +2,7 @@
 // 歌詞存在 chrome.storage.local：
 //   ylpLocal:<影片ID>  = { lrc, artist, song, title, source, created, updated }
 //   ylpOffset:<影片ID> = 字幕時間微調（秒，正數＝字幕提早）
-// source：mine＝自己做的、imported＝從檔案匯入、bundled＝安裝包附的
+// source：mine＝自己做的、tuned＝網路找到的歌詞但自己調過時間、found＝網路找到的（自動收進來）、imported＝從檔案匯入、bundled＝安裝包附的
 'use strict';
 
 var YLP_LIB_FORMAT = 'ylp-library';
@@ -140,8 +140,41 @@ function ylpLibCleanSong(s) {
   };
 }
 
+// 自己做的或自己調過時間的歌，匯入時一律不覆蓋
+function ylpLibIsOwn(source) {
+  const s = source || 'mine';
+  return s === 'mine' || s === 'tuned';
+}
+
+// 以前找過、還留在歌詞快取（lyrics_<影片ID>）裡的同步歌詞，補收進歌詞庫（v1.3.16）
+// 調過時間的標成 tuned，其他標成 found；回傳補收的首數
+// 快取已經被清掉的歌沒辦法補，要等下次打開那部影片、找到歌詞時由歌詞面板收進來
+async function ylpLibAdoptCached() {
+  const all = await chrome.storage.local.get(null);
+  const toSet = {};
+  const now = Date.now();
+  for (const k of Object.keys(all)) {
+    if (!k.startsWith('lyrics_') || k === 'lyrics_metadata') continue;
+    const videoId = k.slice(7);
+    if (!ylpLibIsVideoId(videoId) || all['ylpLocal:' + videoId]) continue;
+    const tuned = Math.abs(Number(all['ylpOffset:' + videoId]) || 0) >= 0.05;
+    const c = all[k];
+    if (!c || !c.synced || typeof c.lyrics !== 'string' || c.lyrics.length > YLP_LIB_MAX_LRC) continue;
+    const lines = ylpLibParseLrc(c.lyrics);
+    if (lines.length < 2) continue;
+    toSet['ylpLocal:' + videoId] = {
+      lrc: ylpLibLinesToLrc(lines),
+      artist: ylpLibText(c.artist), song: ylpLibText(c.song), title: '',
+      source: tuned ? 'tuned' : 'found', created: Number(c.cachedAt) || now, updated: now,
+    };
+  }
+  const n = Object.keys(toSet).length;
+  if (n) await chrome.storage.local.set(toSet);
+  return n;
+}
+
 // 合併進歌詞庫。source：imported 或 bundled
-// 規則：沒有的直接加入；已經有的，只有對方比較新才更新；自己做的（mine）一律不覆蓋
+// 規則：沒有的直接加入；網路找到的（found）一律換成匯入的；其他已經有的，只有對方比較新才更新；自己做的（mine）、自己調過時間的（tuned）一律不覆蓋
 async function ylpLibMerge(songs, source) {
   const stats = { added: 0, updated: 0, skippedOld: 0, skippedMine: 0 };
   if (!songs.length) return stats;
@@ -154,8 +187,9 @@ async function ylpLibMerge(songs, source) {
     const key = 'ylpLocal:' + s.videoId;
     const cur = existing[key] || toSet[key];
     if (cur) {
-      if ((cur.source || 'mine') === 'mine') { stats.skippedMine++; continue; }
-      if ((Number(cur.updated) || 0) >= s.updated) { stats.skippedOld++; continue; }
+      if (ylpLibIsOwn(cur.source)) { stats.skippedMine++; continue; }
+      // 網路找到的（found）一律用匯入的版本（朋友的通常是打點或調過時間的）；其他的比較新才更新
+      if (cur.source !== 'found' && (Number(cur.updated) || 0) >= s.updated) { stats.skippedOld++; continue; }
       stats.updated++;
     } else {
       stats.added++;
@@ -181,6 +215,6 @@ function ylpLibStatsText(st) {
   if (st.added) parts.push(`新增 ${st.added} 首`);
   if (st.updated) parts.push(`更新 ${st.updated} 首`);
   if (st.skippedOld) parts.push(`${st.skippedOld} 首已經是最新的`);
-  if (st.skippedMine) parts.push(`${st.skippedMine} 首你自己做過，沒有覆蓋`);
+  if (st.skippedMine) parts.push(`${st.skippedMine} 首你自己做過或調過時間，沒有覆蓋`);
   return parts.length ? parts.join('、') : '沒有可匯入的歌詞';
 }

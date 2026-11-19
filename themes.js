@@ -23,9 +23,11 @@ var YLP_THEME_DEFAULTS = {
   // 影片上的字幕（類似 CC）
   ccSubs: false,
   ccSize: 'm',
-  // 小圓點透明度：預設跟隨「縮小列透明度」，也可以獨立設定（0%～90%）
+  // 小圓點透明度（0%～90%）；dotFollowBar 是舊版「跟隨縮小列」的設定，v1.3.16 起只用來搬移舊數值
   dotFollowBar: true,
   dotTransparency: 0,
+  // 字幕顯示方式：'both'＝原文＋翻譯、'translation'＝只顯示翻譯
+  lyricsDisplay: 'both',
 };
 
 // 卡拉OK字幕的配色：text＝還沒唱到的字、fill＝填色動畫（唱過的字）、tr＝翻譯

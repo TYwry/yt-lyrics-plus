@@ -533,8 +533,7 @@ chrome.storage.sync.get(YLP_DEFAULTS, (s) => {
   document.getElementById('translateToggle').classList.toggle('active', s.translate !== false);
   document.getElementById('karaokeWipeToggle').classList.toggle('active', s.karaokeWipe !== false);
   document.getElementById('ytCaptionsToggle').classList.toggle('active', s.useYouTubeCaptions !== false);
-  document.getElementById('miniTransparency').value = s.miniTransparency;
-  document.getElementById('miniTransparencyValue').textContent = s.miniTransparency + '%';
+  document.getElementById('lyricsDisplaySelect').value = s.lyricsDisplay === 'translation' ? 'translation' : 'both';
   document.getElementById('pauseSeconds').value = s.pauseSeconds;
   document.getElementById('targetLangSelect').value = s.targetLang;
 });
@@ -553,16 +552,20 @@ document.getElementById('pauseSeconds').addEventListener('change', function () {
   chrome.storage.sync.set({ pauseSeconds: n });
 });
 
-document.getElementById('miniTransparency').addEventListener('input', function () {
-  const n = Math.min(90, Math.max(0, parseInt(this.value, 10) || 0));
-  document.getElementById('miniTransparencyValue').textContent = n + '%';
-  // 拖動中：只即時預覽目前分頁，不寫入設定
-  ylpPreview({ miniTransparency: n });
-});
-// 放開滑桿時才儲存（Chrome 同步設定每分鐘最多寫入 120 次，拖動時一直寫會被擋下，導致設定失效）
-document.getElementById('miniTransparency').addEventListener('change', function () {
-  const n = Math.min(90, Math.max(0, parseInt(this.value, 10) || 0));
-  chrome.storage.sync.set({ miniTransparency: n });
+// 字幕顯示方式：原文＋翻譯／只顯示翻譯（馬上套用，不用重新載入）
+document.getElementById('lyricsDisplaySelect').addEventListener('change', function () {
+  const sel = this;
+  const value = sel.value === 'translation' ? 'translation' : 'both';
+  sel.disabled = true;
+  showStatus('正在儲存字幕顯示方式…', 'success');
+  chrome.storage.sync.set({ lyricsDisplay: value }, () => {
+    sel.disabled = false;
+    if (chrome.runtime.lastError) {
+      showStatus('字幕顯示方式沒有存成功：' + chrome.runtime.lastError.message + '，請再選一次', 'error');
+      return;
+    }
+    showStatus(value === 'translation' ? '已改成只顯示翻譯' : '已改成原文＋翻譯一起顯示', 'success');
+  });
 });
 
 document.getElementById('targetLangSelect').addEventListener('change', function () {
@@ -775,40 +778,29 @@ chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
   chrome.tabs.sendMessage(tab.id, { action: 'ylpShowIfClosed' }, () => void chrome.runtime.lastError);
 });
 
-// === 小圓點透明度（預設跟隨縮小列透明度） ===
-const ylpDotState = { follow: true, own: 0, mini: 0 };
+// === 小圓點透明度 ===
+// v1.3.16 拿掉「縮成一排」與「跟隨縮小列透明度」；以前開著「跟隨」的人，第一次打開時把縮小列的數值搬過來
+const ylpDotState = { own: 0 };
 function ylpRenderDotRow() {
-  const val = ylpDotState.follow ? ylpDotState.mini : ylpDotState.own;
-  document.getElementById('dotFollowToggle').classList.toggle('active', ylpDotState.follow);
   const r = document.getElementById('dotTransparency');
-  r.disabled = ylpDotState.follow;
-  r.value = val;
-  document.getElementById('dotTransparencyValue').textContent = val + '%' + (ylpDotState.follow ? '（跟隨縮小列）' : '');
+  r.value = ylpDotState.own;
+  document.getElementById('dotTransparencyValue').textContent = ylpDotState.own + '%';
 }
 chrome.storage.sync.get({ dotFollowBar: true, dotTransparency: 0, miniTransparency: 0 }, (s) => {
-  ylpDotState.follow = s.dotFollowBar !== false;
-  ylpDotState.own = Math.min(90, Math.max(0, Number(s.dotTransparency) || 0));
-  ylpDotState.mini = Math.min(90, Math.max(0, Number(s.miniTransparency) || 0));
+  const follow = s.dotFollowBar !== false;
+  ylpDotState.own = Math.min(90, Math.max(0, Number(follow ? s.miniTransparency : s.dotTransparency) || 0));
   ylpRenderDotRow();
-});
-document.getElementById('dotFollowToggle').addEventListener('click', () => {
-  ylpDotState.follow = !ylpDotState.follow;
-  // 改成獨立設定時，從目前縮小列的數值開始調
-  if (!ylpDotState.follow) ylpDotState.own = ylpDotState.mini;
-  ylpRenderDotRow();
-  chrome.storage.sync.set({ dotFollowBar: ylpDotState.follow, dotTransparency: ylpDotState.own });
+  if (follow) chrome.storage.sync.set({ dotFollowBar: false, dotTransparency: ylpDotState.own });
 });
 const ylpDotRange = document.getElementById('dotTransparency');
 ylpDotRange.addEventListener('input', () => {
   ylpDotState.own = Math.min(90, Math.max(0, parseInt(ylpDotRange.value, 10) || 0));
   ylpRenderDotRow();
-  ylpPreview({ dotTransparency: ylpDotState.own, dotFollowBar: false }); // 拖動中只預覽
+  ylpPreview({ dotTransparency: ylpDotState.own }); // 拖動中只預覽
 });
+// 放開滑桿時才儲存（Chrome 同步設定每分鐘最多寫入 120 次，拖動時一直寫會被擋下）
 ylpDotRange.addEventListener('change', () => {
-  chrome.storage.sync.set({ dotTransparency: ylpDotState.own });
-});
-// 縮小列透明度改變時，跟隨模式的顯示也一起更新
-document.getElementById('miniTransparency').addEventListener('input', function () {
-  ylpDotState.mini = Math.min(90, Math.max(0, parseInt(this.value, 10) || 0));
-  if (ylpDotState.follow) ylpRenderDotRow();
+  chrome.storage.sync.set({ dotTransparency: ylpDotState.own }, () => {
+    if (chrome.runtime.lastError) showStatus('小圓點透明度沒有存成功：' + chrome.runtime.lastError.message, 'error');
+  });
 });
