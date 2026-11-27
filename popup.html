@@ -2,6 +2,7 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8">
+  <title>YT 歌詞設定</title>
   <style>
     * {
       margin: 0;
@@ -733,6 +734,11 @@
     .key-btn.waiting { border-color: #34C759; color: #34C759; }
     .dot-follow { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; font-size: 12px; }
     .range:disabled { opacity: 0.4; }
+    /* v1.3.17：小視窗只顯示外觀；完整設定在分頁（popup.html?page=settings） */
+    body:not(.settings-page) .settings-only { display: none; }
+    body.settings-page .popup-only { display: none; }
+    body.settings-page { width: auto; min-height: 100vh; overflow-y: visible; }
+    body.settings-page .content { max-width: 720px; margin: 0 auto; padding-bottom: 40px; }
   </style>
 </head>
 <body>
@@ -744,7 +750,26 @@
   </div>
   
   <div class="content">
-    <div class="section">
+    <!-- 小視窗專用：打開完整的設定分頁 -->
+    <div class="section popup-only">
+      <button class="primary-btn" id="openSettingsBtn">⚙ 詳細設定</button>
+    </div>
+
+    <!-- 設定分頁最上方：我的歌詞庫 -->
+    <div class="section settings-only">
+      <div class="section-title">我的歌詞庫</div>
+      <div class="card">
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">我的歌詞庫</div>
+            <div class="setting-description">管理自己做的同步歌詞；匯出給朋友、匯入朋友傳來的歌詞</div>
+          </div>
+          <button class="key-btn" id="openLibraryBtn">📚 打開</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="section settings-only">
       <div class="section-title">顯示設定</div>
       <div class="card">
         <div class="setting-row" id="autoShowRow" style="display: none;">
@@ -781,6 +806,7 @@
       </div>
     </div>
 
+    <!-- 外觀（主題、背景透明度）：小視窗和設定分頁都顯示 -->
     <div class="section">
       <div class="section-title">外觀</div>
       <div class="card">
@@ -813,7 +839,7 @@
       </div>
     </div>
 
-    <div class="section">
+    <div class="section settings-only">
       <div class="section-title">卡拉OK與影片字幕</div>
       <div class="card">
         <div class="setting-row" id="ccRow">
@@ -867,7 +893,7 @@
       </div>
     </div>
 
-    <div class="section">
+    <div class="section settings-only">
       <div class="section-title">捲動與翻譯</div>
       <div class="card">
         <div class="setting-row" id="autoScrollRow">
@@ -892,6 +918,15 @@
             <div class="setting-description">每句歌詞下方顯示譯文（歌詞面板的「譯」按鈕也能切換）</div>
           </div>
           <div class="toggle-switch" id="translateToggle">
+            <div class="toggle-slider"></div>
+          </div>
+        </div>
+        <div class="setting-row" id="skipEnglishRow">
+          <div class="setting-info">
+            <div class="setting-label">英文歌詞不翻譯</div>
+            <div class="setting-description">整句只有英文字母的歌詞不翻譯，只翻其他語言（西班牙文、法文等也用英文字母，一樣不翻）</div>
+          </div>
+          <div class="toggle-switch" id="skipEnglishToggle">
             <div class="toggle-slider"></div>
           </div>
         </div>
@@ -938,7 +973,7 @@
       </div>
     </div>
     
-    <div class="section">
+    <div class="section settings-only">
       <div class="section-title">打點按鍵</div>
       <div class="card">
         <div class="setting-row">
@@ -958,7 +993,7 @@
       </div>
     </div>
 
-    <div class="section">
+    <div class="section settings-only">
       <div class="section-title">歌詞來源</div>
       <div class="card">
         <div class="setting-row" id="ytCaptionsRow">
@@ -970,17 +1005,11 @@
             <div class="toggle-slider"></div>
           </div>
         </div>
-        <div class="setting-row">
-          <div class="setting-info">
-            <div class="setting-label">我的歌詞庫</div>
-            <div class="setting-description">管理自己做的同步歌詞；匯出給朋友、匯入朋友傳來的歌詞</div>
-          </div>
-          <button class="key-btn" id="openLibraryBtn">📚 打開</button>
-        </div>
       </div>
     </div>
 
-    <div class="section">
+    <!-- 「立即顯示歌詞」已拿掉（v1.3.17）：打開小視窗就會自動打開歌詞面板；元素保留但不顯示 -->
+    <div class="section" hidden style="display: none;">
       <div class="section-title">操作</div>
       <button class="primary-btn" id="showLyricsBtn">
         🔍 立即顯示歌詞

@@ -28,6 +28,8 @@ var YLP_THEME_DEFAULTS = {
   dotTransparency: 0,
   // 字幕顯示方式：'both'＝原文＋翻譯、'translation'＝只顯示翻譯
   lyricsDisplay: 'both',
+  // 英文歌詞不翻譯：整句只有英文字母（拉丁字母）的歌詞不送翻譯（v1.3.17）
+  skipEnglish: false,
 };
 
 // 卡拉OK字幕的配色：text＝還沒唱到的字、fill＝填色動畫（唱過的字）、tr＝翻譯

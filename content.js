@@ -14,6 +14,37 @@ function ylpEscape(text) {
   return String(text ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+// ---------- 簡體轉繁體（v1.3.16，用 OpenCC：vendor/opencc-cn2t.js） ----------
+// 原文一律不出現簡體：歌詞、歌名、歌手裡的簡體字轉成台灣繁體（含台灣用詞）
+// 有日文假名或韓文的內容不轉（日文漢字和簡體字有些長得一樣，轉了反而錯）
+var ylpS2T = null;
+var ylpS2TFailed = false;
+function ylpToTradLine(s) {
+  s = String(s ?? '');
+  if (!/\p{Script=Han}/u.test(s) || /[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(s)) return s;
+  if (!ylpS2T && !ylpS2TFailed) {
+    try {
+      ylpS2T = globalThis.OpenCC.Converter({ from: 'cn', to: 'twp' });
+    } catch (e) {
+      ylpS2TFailed = true;
+      console.warn('[簡轉繁] 轉換工具載入失敗：', e);
+      setTimeout(() => { try { ylpToast('⚠️ 簡轉繁工具載入失敗，簡體字暫時不會轉成繁體。請到 chrome://extensions 重新載入外掛'); } catch (err) { /* 面板還沒開 */ } }, 0);
+    }
+  }
+  if (!ylpS2T) return s;
+  try { return ylpS2T(s); } catch (e) { console.warn('[簡轉繁] 轉換失敗：', e); return s; }
+}
+// 整份歌詞：只要裡面有日文假名或韓文就整份不轉
+function ylpToTrad(text) {
+  const t = String(text ?? '');
+  if (/[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(t)) return t;
+  return t.split('\n').map(ylpToTradLine).join('\n');
+}
+function ylpTradResult(result) {
+  if (!result || typeof result.lyrics !== 'string') return result;
+  return { ...result, lyrics: ylpToTrad(result.lyrics), artist: ylpToTradLine(result.artist || ''), song: ylpToTradLine(result.song || '') };
+}
+
 // ---------- 字幕時間微調（每部影片各自記住） ----------
 // ylpOffset：秒。正數＝字幕提早出現（字幕太慢時用），負數＝字幕延後出現
 var ylpOffset = 0;
@@ -76,6 +107,7 @@ async function ylpLoadOffset(videoId) {
   ylpOffset = v;
   ylpSyncDirty = true;
   ylpUpdateOffsetUI();
+  try { if (ylpZh.lines) ylpZhRefresh(); } catch (e) {}
   try { ylpKaraokeRender(true); } catch (e) {}
 }
 
@@ -84,6 +116,7 @@ function ylpSetOffset(v) {
   ylpOffset = v;
   ylpSyncDirty = true;
   ylpUpdateOffsetUI();
+  try { if (ylpZh.lines) ylpZhRefresh(); } catch (e) {}
   try { ylpKaraokeRender(true); } catch (e) {}
   const id = ylpOffsetVideo;
   if (!id) return;
@@ -279,7 +312,7 @@ async function ylpHeaderSearch(bar) {
       break;
     }
   }
-  const parsed = { artistFromTitle: artist, artistFromChannel: '', coverArtist: '', song, originalTitle: song, isCover: false, language: 'en' };
+  const parsed = { artistFromTitle: artist, artistFromChannel: '', coverArtist: '', song, originalTitle: song, isCover: false, language: 'en', _skipSeen: true };
   let result = null;
   try { result = await ylpSearchAll(parsed); } catch (e) { result = null; }
   if (!document.body.contains(bar)) return; // 搜尋期間面板被關掉或換歌
@@ -293,7 +326,8 @@ async function ylpHeaderSearch(bar) {
     } catch (e) { /* 快取失敗不影響顯示 */ }
     displayLyrics(result, false);
   } else {
-    go.textContent = '找不到';
+    go.textContent = ylpHasSeen() ? '沒有其他歌詞了' : '找不到';
+    if (ylpHasSeen()) ylpToast('找不到其他歌詞（你看過的不會再出現）');
     setTimeout(() => { if (!go.disabled) go.textContent = '搜尋'; }, 2000);
   }
 }
@@ -548,8 +582,14 @@ function ylpCcRender(force = false) {
   const player = document.getElementById('movie_player');
   let el = document.getElementById('ylp-cc');
   const lines = ylpSyncedLines();
-  const idx = ylpActiveIndex();
+  let idx = ylpActiveIndex();
   let cur = idx >= 0 ? lines[idx] : null;
+  // 打點中：不播舊歌詞，只在按住時顯示正在打的那一句，放開就消失（v1.3.17）
+  if (ylpTap) {
+    const h = ylpTap.holding;
+    cur = h >= 0 && ylpTap.lines[h] ? { text: String(ylpTap.lines[h]) } : null;
+    idx = 'tap' + h;
+  }
   // 這句有結束時間、而且已經唱完：影片字幕先收起來，等下一句
   if (cur && Number.isFinite(cur.end)) {
     const v = document.querySelector('video');
@@ -576,7 +616,7 @@ function ylpCcRender(force = false) {
     ylpCcObservedPlayer = player;
   }
   const lang = ylpSettings.targetLang;
-  const tr = ylpSettings.translate ? (ylpCache.get(lang + '|' + cur.text.replace(/\s+/g, ' ').trim()) || '') : '';
+  const tr = ylpSettings.translate ? (ylpTrOf(cur.text) || '') : '';
   const trOnly = ylpTrOnly() && !!tr;
   const key = [idx, cur.text, tr, ylpSettings.ccSize, trOnly].join('|');
   el.hidden = false;
@@ -836,7 +876,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if ('ccSubs' in changes || 'ccSize' in changes || 'translate' in changes || 'targetLang' in changes) { ylpUpdateCcButton(); ylpCcRender(true); }
   if ('miniTransparency' in changes) ylpApplyMiniTransparency();
   if ('dotTransparency' in changes) ylpApplyDotTransparency();
-  if ('lyricsDisplay' in changes || 'translate' in changes) { ylpApplyDisplayMode(); ylpKaraokeRender(true); ylpCcRender(true); }
+  if ('lyricsDisplay' in changes || 'translate' in changes || 'skipEnglish' in changes) { ylpApplyDisplayMode(); ylpKaraokeRender(true); ylpCcRender(true); }
   ylpApplyTheme();
 });
 
@@ -1173,7 +1213,7 @@ function ylpKaraokeRender(force = false) {
   const idx = ylpActiveIndex();
   const lang = ylpSettings.targetLang;
   const cur = lines[idx];
-  const trKey = cur && ylpSettings.translate ? (ylpCache.get(lang + '|' + cur.text.replace(/\s+/g, ' ').trim()) || '') : '';
+  const trKey = cur && ylpSettings.translate ? (ylpTrOf(cur.text) || '') : '';
   const trOnly = ylpTrOnly();
   const stateKey = [ylpLyricsState, lines.length, idx, trKey, ylpSettings.karaokeWipe, trOnly].join('|');
 
@@ -1241,7 +1281,7 @@ function ylpKaraokeRender(force = false) {
   if (nextLine) {
     const nx = document.createElement('div');
     nx.className = 'ylp-k-next';
-    const nextTr = trOnly ? (ylpCache.get(lang + '|' + nextLine.text.replace(/\s+/g, ' ').trim()) || '') : '';
+    const nextTr = trOnly ? (ylpTrOf(nextLine.text) || '') : '';
     nx.textContent = nextTr || nextLine.text;
     box.appendChild(nx);
   }
@@ -1353,9 +1393,25 @@ function ylpApplyEndMarks(lines) {
   return out;
 }
 
+// 從 CC 字幕找歌詞時要找「原文」：依影片標題的文字判斷原文語言（v1.3.17）
+// 韓文字→韓文、日文假名→日文、漢字→中文、英文字母→英文；判斷不出來或沒有那個語言時，照原本的順序挑
+function ylpTitleLang() {
+  let title = '';
+  try { title = getVideoTitle() || ''; } catch (e) { /* 忽略 */ }
+  title = title.replace(/[\(\[（【][^\)\]）】]*[\)\]）】]/g, ' '); // 括號裡常是 MV、官方等註記，不列入判斷
+  const sc = ylpScriptOf(title);
+  return { hangul: ['ko'], kana: ['ja'], han: ['zh-TW', 'zh-Hant', 'zh-HK', 'zh', 'zh-Hans', 'zh-CN'], latin: ['en'] }[sc] || [];
+}
+
 function ylpPickTrack(tracks) {
   const manual = tracks.filter((t) => t.kind !== 'asr' && !String(t.vssId).startsWith('a.'));
   if (!manual.length) return null; // 自動產生的字幕對歌曲很不準，不採用
+  const same = (t, code) => t.languageCode === code || String(t.languageCode || '').startsWith(code + '-');
+  // 先找標題語言（原文）的字幕
+  for (const code of ylpTitleLang()) {
+    const hit = manual.find((t) => same(t, code));
+    if (hit) return hit;
+  }
   const prefer = ['zh-TW', 'zh-Hant', 'zh-HK', 'zh', 'zh-Hans', 'zh-CN', 'ja', 'ko', 'en'];
   for (const code of prefer) {
     const hit = manual.find((t) => t.languageCode === code);
@@ -1364,13 +1420,8 @@ function ylpPickTrack(tracks) {
   return manual[0];
 }
 
-// 從目前影片的 CC 字幕取得同步歌詞
-async function ylpFetchYouTubeCaptions(videoId) {
-  const info = await ylpPageRequest('getTracks');
-  if (!info || info.videoId !== videoId) throw new Error('讀不到影片字幕資訊');
-  const track = ylpPickTrack(info.tracks || []);
-  if (!track) throw new Error('這部影片沒有字幕');
-
+// 下載某一條字幕的內容（json3 或 XML）
+async function ylpFetchTrackText(videoId, info, track) {
   let text = ylpCaptured.get(videoId + '|' + track.languageCode) || '';
 
   // 先直接下載
@@ -1389,6 +1440,158 @@ async function ylpFetchYouTubeCaptions(videoId) {
     text = ylpCaptured.get(key) || '';
     if (!info.captionsOn) await ylpPageRequest('disableCaptions'); // 原本沒開字幕就關回去
   }
+  return text;
+}
+
+// ---------- 「中」按鈕：用 YouTube 上傳者做的中文字幕當翻譯（v1.3.16） ----------
+// 字幕轉成繁體後，依時間對到每一句歌詞，取代 Google 翻譯；對不到的句子仍用 Google 翻譯
+// 每部影片記在 chrome.storage.local 的 ylpZhSub:<影片ID>，下次打開自動套用
+var ylpZh = { videoId: null, lines: null, map: new Map() };
+var ylpZhBusy = false;
+function ylpZhKey(videoId) { return 'ylpZhSub:' + videoId; }
+// 「英文歌詞不翻譯」開著時，整句只有英文字母的歌詞不翻
+function ylpSkipLine(text) {
+  return !!ylpSettings.skipEnglish && ylpScriptOf(String(text || '')) === 'latin';
+}
+function ylpNormText(t) { return String(t || '').replace(/\s+/g, ' ').trim(); }
+
+function ylpZhActive() {
+  return ylpZh.videoId && ylpZh.videoId === currentVideoId && ylpZh.map.size > 0
+    && String(ylpSettings.targetLang || '').startsWith('zh');
+}
+
+// 取得某句歌詞的譯文：有 YouTube 中文字幕就用它，否則用 Google 翻譯的結果（undefined＝還沒翻）
+function ylpTrOf(text) {
+  const k = ylpNormText(text);
+  if (ylpSkipLine(k)) return '';
+  if (ylpZhActive() && ylpZh.map.has(k)) return ylpZh.map.get(k);
+  return ylpCache.get(ylpSettings.targetLang + '|' + k);
+}
+
+// 依時間把字幕對到歌詞（歌詞時間＝影片時間＋微調）
+function ylpZhBuildMap() {
+  ylpZh.map = new Map();
+  if (!ylpZh.lines || ylpZh.videoId !== currentVideoId) return 0;
+  const r = currentLyricsResult;
+  if (!r || !r.synced || typeof r.lyrics !== 'string') return 0;
+  const lyr = ylpNormalizeLrc(r.lyrics);
+  const caps = ylpZh.lines;
+  let hit = 0;
+  for (const l of lyr) {
+    const want = l.time - ylpOffset; // 這句在影片上的時間
+    let best = null, bestD = Infinity;
+    for (const c of caps) {
+      const d = Math.abs(c.time - want);
+      if (d < bestD) { bestD = d; best = c; }
+    }
+    const k = ylpNormText(l.text);
+    if (best && bestD <= 2 && k && !ylpZh.map.has(k)) { ylpZh.map.set(k, best.text); hit++; }
+  }
+  return hit;
+}
+
+function ylpZhRefresh() {
+  ylpZhBuildMap();
+  ylpZhUpdateButton();
+  ylpApplyTranslations();
+  try { ylpKaraokeRender(true); ylpCcRender(true); } catch (e) { /* 忽略 */ }
+}
+
+function ylpZhUpdateButton() {
+  const btn = document.getElementById('ylp-zh-btn');
+  if (!btn || ylpZhBusy) return;
+  const on = ylpZh.videoId === currentVideoId && !!ylpZh.lines;
+  btn.classList.toggle('on', on);
+  btn.title = on ? '正在用 YouTube 中文字幕當翻譯；點一下改回 Google 翻譯' : '檢查這部影片有沒有 YouTube 中文字幕，有的話拿來當翻譯（轉成繁體）';
+}
+
+// 換歌或顯示歌詞時：讀出這部影片之前選過的中文字幕
+async function ylpZhLoadForVideo(videoId) {
+  if (!videoId) return;
+  if (ylpZh.videoId !== videoId) ylpZh = { videoId: null, lines: null, map: new Map() };
+  try {
+    const d = (await chrome.storage.local.get(ylpZhKey(videoId)))[ylpZhKey(videoId)];
+    if (videoId !== currentVideoId) return;
+    if (d && Array.isArray(d.lines) && d.lines.length) ylpZh = { videoId, lines: d.lines, map: new Map() };
+  } catch (e) {
+    console.warn('[中文字幕] 讀取失敗：', e);
+  }
+  ylpZhRefresh();
+}
+
+// 從播放器取得上傳者做的中文字幕（繁體優先），轉成繁體
+async function ylpFetchZhSub(videoId) {
+  const info = await ylpPageRequest('getTracks');
+  if (!info || info.videoId !== videoId) throw new Error('讀不到影片字幕資訊，請重新整理頁面再試');
+  const manual = (info.tracks || []).filter((t) => t.kind !== 'asr' && !String(t.vssId).startsWith('a.'));
+  const prefer = ['zh-TW', 'zh-Hant', 'zh-HK', 'zh-Hans', 'zh-CN', 'zh-SG', 'zh'];
+  let track = null;
+  for (const code of prefer) { track = manual.find((t) => t.languageCode === code); if (track) break; }
+  if (!track) track = manual.find((t) => String(t.languageCode || '').toLowerCase().startsWith('zh'));
+  if (!track) throw new Error('這部影片沒有 YouTube 中文字幕（自動產生的不算）');
+  const text = await ylpFetchTrackText(videoId, info, track);
+  const lines = ylpParseTimedText(text).map((l) => ({ time: l.time, text: ylpToTradLine(l.text) })).filter((l) => l.text);
+  if (lines.length < 2) throw new Error('中文字幕內容太少，沒辦法拿來當翻譯');
+  return { lines, lang: track.languageCode };
+}
+
+async function ylpZhToggle() {
+  const btn = document.getElementById('ylp-zh-btn');
+  const videoId = currentVideoId;
+  if (!btn || ylpZhBusy || !videoId) return;
+  // 已經在用：改回 Google 翻譯
+  if (ylpZh.videoId === videoId && ylpZh.lines) {
+    ylpZh = { videoId: null, lines: null, map: new Map() };
+    try { await chrome.storage.local.remove(ylpZhKey(videoId)); } catch (e) { console.warn('[中文字幕] 取消記錄失敗：', e); }
+    ylpZhRefresh();
+    ylpToast('已改回 Google 翻譯');
+    return;
+  }
+  const r = currentLyricsResult;
+  if (!r || !r.synced) { ylpToast('⚠️ 要先有同步歌詞（有時間軸）才能對照字幕'); return; }
+  if (!String(ylpSettings.targetLang || '').startsWith('zh')) { ylpToast('⚠️ 設定的「翻譯成」不是中文，請先改成繁體中文'); return; }
+
+  ylpZhBusy = true;
+  btn.disabled = true;
+  btn.textContent = '…';
+  ylpToast('正在檢查 YouTube 中文字幕…');
+  let timer;
+  try {
+    const got = await Promise.race([
+      ylpFetchZhSub(videoId),
+      new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('等了 8 秒還沒拿到字幕，請稍後再按一次')), 8000); }),
+    ]);
+    if (videoId !== currentVideoId) return; // 已經換歌
+    ylpZh = { videoId, lines: got.lines, map: new Map() };
+    const hit = ylpZhBuildMap();
+    if (!hit) {
+      ylpZh = { videoId: null, lines: null, map: new Map() };
+      throw new Error('找到中文字幕，但時間和歌詞對不上（可能是不同版本的影片）');
+    }
+    await chrome.storage.local.set({ [ylpZhKey(videoId)]: { lines: got.lines, lang: got.lang, saved: Date.now() } });
+    const total = ylpNormalizeLrc(r.lyrics).length;
+    ylpToast(`✅ 已改用 YouTube 中文字幕當翻譯（對到 ${hit}／${total} 句，其餘用 Google 翻譯）`
+      + (ylpSettings.translate ? '' : '。目前翻譯是關的，按「譯」打開就看得到'));
+  } catch (e) {
+    console.warn('[中文字幕]', e);
+    ylpToast('⚠️ ' + ((e && e.message) || e));
+  } finally {
+    clearTimeout(timer);
+    ylpZhBusy = false;
+    btn.disabled = false;
+    btn.textContent = '中';
+    ylpZhRefresh();
+  }
+}
+
+// 從目前影片的 CC 字幕取得同步歌詞
+async function ylpFetchYouTubeCaptions(videoId) {
+  const info = await ylpPageRequest('getTracks');
+  if (!info || info.videoId !== videoId) throw new Error('讀不到影片字幕資訊');
+  const track = ylpPickTrack(info.tracks || []);
+  if (!track) throw new Error('這部影片沒有字幕');
+
+  const text = await ylpFetchTrackText(videoId, info, track);
 
   const lines = ylpParseTimedText(text);
   if (lines.length < 4) throw new Error('字幕內容太少，不像是歌詞');
@@ -1403,30 +1606,58 @@ async function ylpFetchYouTubeCaptions(videoId) {
 }
 
 // 搜尋順序：LRCLIB／Lyrics.ovh 的同步歌詞 → YouTube 字幕 → 純文字歌詞
-async function ylpSearchAll(parsedData) {
-  // 手動搜尋時也先找自己歌詞庫裡的同一首歌
-  const mine = await ylpFindLocalBySong(ylpSongCandidates(parsedData).slice(0, 1));
-  if (mine) return mine;
-  let plain = null;
-  try {
-    const r = await searchAllSources(parsedData);
-    if (r && r.synced) return r;
-    plain = r;
-  } catch (e) { /* 繼續試其他來源 */ }
+// ---------- 看過的歌詞不再給（v1.3.17） ----------
+// 每部影片記住顯示過的歌詞；使用者按搜尋、重新搜尋、手動搜尋時，跳過看過的
+// 比對的是歌詞內容（去掉時間、標點、空白，簡體轉繁體），換來源或簡繁不同都算同一份
+var ylpSeen = { videoId: null, set: new Set() };
+var ylpSkipSeenNow = false;
+function ylpFingerprint(lyrics) {
+  return ylpToTrad(String(lyrics || '').replace(/\[[^\]]*\]/g, ''))
+    .toLowerCase().replace(/[\s\p{P}\p{S}]+/gu, '').slice(0, 4000);
+}
+function ylpMarkSeen(videoId, lyrics) {
+  if (!videoId) return;
+  if (ylpSeen.videoId !== videoId) ylpSeen = { videoId, set: new Set() };
+  const fp = ylpFingerprint(lyrics);
+  if (fp) ylpSeen.set.add(fp);
+}
+function ylpIsSeen(lyrics) {
+  if (!ylpSkipSeenNow || ylpSeen.videoId !== currentVideoId || !ylpSeen.set.size) return false;
+  return ylpSeen.set.has(ylpFingerprint(lyrics));
+}
+function ylpHasSeen() { return ylpSeen.videoId === currentVideoId && ylpSeen.set.size > 0; }
 
-  if (ylpSettings.useYouTubeCaptions !== false && currentVideoId) {
+// parsedData._skipSeen＝true：使用者自己按的搜尋，跳過看過的歌詞
+async function ylpSearchAll(parsedData) {
+  ylpSkipSeenNow = !!(parsedData && parsedData._skipSeen);
+  try {
+    // 手動搜尋時也先找自己歌詞庫裡的同一首歌
+    const mine = await ylpFindLocalBySong(ylpSongCandidates(parsedData).slice(0, 1));
+    if (mine && !ylpIsSeen(mine.lyrics)) return mine;
+    let plain = null;
     try {
-      fillNextBox('YouTube 字幕');
-      const r = await ylpFetchYouTubeCaptions(currentVideoId);
-      if (!r.artist) r.artist = parsedData.artistFromTitle || parsedData.artistFromChannel || '';
-      if (!r.song) r.song = parsedData.song || '';
-      return r;
-    } catch (e) {
-      console.log('YouTube 字幕：', e.message);
+      const r = await searchAllSources(parsedData);
+      if (r && r.synced) return r;
+      plain = r;
+    } catch (e) { /* 繼續試其他來源 */ }
+
+    if (ylpSettings.useYouTubeCaptions !== false && currentVideoId) {
+      try {
+        fillNextBox('YouTube 字幕');
+        const r = await ylpFetchYouTubeCaptions(currentVideoId);
+        if (ylpIsSeen(r.lyrics)) throw new Error('這份字幕已經看過了');
+        if (!r.artist) r.artist = parsedData.artistFromTitle || parsedData.artistFromChannel || '';
+        if (!r.song) r.song = parsedData.song || '';
+        return r;
+      } catch (e) {
+        console.log('YouTube 字幕：', e.message);
+      }
     }
+    if (plain) return plain;
+    throw new Error(ylpSkipSeenNow && ylpHasSeen() ? '找不到其他歌詞（看過的不會再出現）' : '所有來源都找不到歌詞');
+  } finally {
+    ylpSkipSeenNow = false;
   }
-  if (plain) return plain;
-  throw new Error('所有來源都找不到歌詞');
 }
 
 // ---------- 本機歌詞（自己打點或貼上的 LRC，存在這台電腦） ----------
@@ -1497,8 +1728,8 @@ async function ylpSaveLocal(videoId, lrc, artist, song, title) {
     const old = (await chrome.storage.local.get(key))[key];
     if (old && Number(old.created)) created = Number(old.created);
   } catch (e) { /* 忽略 */ }
-  // source: mine＝自己做的（匯入別人的歌詞庫時不會被覆蓋）
-  await chrome.storage.local.set({ [key]: { lrc, artist, song, title: title || '', source: 'mine', created, updated: Date.now() } });
+  // source: mine＝自己做的（匯入別人的歌詞庫時不會被覆蓋）；簡體一律轉繁體
+  await chrome.storage.local.set({ [key]: { lrc: ylpToTrad(lrc), artist: ylpToTradLine(artist), song: ylpToTradLine(song), title: title || '', source: 'mine', created, updated: Date.now() } });
   try { await clearCachedLyrics(videoId); } catch (e) { /* 忽略 */ }
 }
 
@@ -1993,6 +2224,7 @@ function ylpTapRefresh() {
   const focus = list.querySelector('.ylp-tap-line.holding, .ylp-tap-line.next');
   const content = document.getElementById('lyrics-content');
   if (focus && content) ylpScrollToLine(focus);
+  try { ylpCcRender(true); } catch (e) { /* 忽略 */ }
 }
 
 function ylpStopTap() {
@@ -2000,6 +2232,7 @@ function ylpStopTap() {
   for (const type of ['keydown', 'keyup', 'keypress']) window.removeEventListener(type, ylpTapKeys, true);
   window.removeEventListener('blur', ylpTapUp);
   ylpTap = null;
+  try { ylpCcRender(true); } catch (e) { /* 忽略 */ }
 }
 
 // 把目前面板上的歌詞加上翻譯（已翻過的直接顯示，沒翻過的送出翻譯）
@@ -2014,7 +2247,9 @@ async function ylpApplyTranslations() {
   for (const el of els) {
     const text = ylpOriginal(el);
     if (!text || !/\p{L}/u.test(text)) continue;
+    if (ylpSkipLine(text)) { ylpShow(el, ''); continue; } // 英文不翻
     const key = lang + '|' + text;
+    if (ylpZhActive() && ylpZh.map.has(text)) { ylpShow(el, ylpZh.map.get(text)); continue; } // YouTube 中文字幕優先
     if (ylpCache.has(key)) ylpShow(el, ylpCache.get(key));
     else if (!ylpFailed.has(key)) todo.add(text);
   }
@@ -2024,6 +2259,8 @@ async function ylpApplyTranslations() {
       const text = String(l.text || '').replace(/\s+/g, ' ').trim();
       if (!text || !/\p{L}/u.test(text)) continue;
       const key = lang + '|' + text;
+      if (ylpSkipLine(text)) continue;
+      if (ylpZhActive() && ylpZh.map.has(text)) continue;
       if (!ylpCache.has(key) && !ylpFailed.has(key)) todo.add(text);
     }
   }
@@ -2058,8 +2295,9 @@ async function ylpApplyTranslations() {
 
   // 套用結果；翻譯插入後行高改變，重新對準目前這一句
   for (const el of ylpLineElements()) {
-    const key = ylpSettings.targetLang + '|' + ylpOriginal(el);
-    if (ylpSettings.translate && ylpCache.has(key)) ylpShow(el, ylpCache.get(key));
+    if (!ylpSettings.translate) break;
+    const tr = ylpTrOf(ylpOriginal(el));
+    if (tr !== undefined) ylpShow(el, tr);
   }
   ylpLastScrolledIndex = -1;
   ylpKaraokeRender(true);
@@ -3427,7 +3665,7 @@ async function searchLRCLIB(artist, song) {
         const norm = (t) => String(t || '').toLowerCase().replace(/[\s\-_.·'’]+/g, '');
         const a = norm(artist);
         const t = norm(song);
-        let candidates = results.filter(r => r.syncedLyrics || r.plainLyrics);
+        let candidates = results.filter(r => (r.syncedLyrics || r.plainLyrics) && !ylpIsSeen(r.syncedLyrics || r.plainLyrics));
         if (a) {
           candidates = candidates.filter(r => {
             const n = norm(r.artistName);
@@ -3480,7 +3718,7 @@ async function searchLyricsOVH(artist, song) {
     
     const data = await ylpFetchJson(url, 6000);
     
-    if (data && data.lyrics) {
+    if (data && data.lyrics && !ylpIsSeen(data.lyrics)) {
       console.log('✅ Lyrics.ovh found lyrics');
       return {
         lyrics: data.lyrics,
@@ -3919,6 +4157,9 @@ function createLyricsPanel() {
       #lyrics-extension-panel.ylp-tr-only .ylp-translation { font-size: 1em; line-height: inherit; margin-top: 0; opacity: 1; font-weight: inherit; }
       #lyrics-extension-panel .plain-line { margin-bottom: 6px; }
       #lyrics-extension-panel .ylp-translate-btn.off { opacity: 0.4; }
+      #lyrics-extension-panel .ylp-zh-btn { font-size: 12px; opacity: 0.55; }
+      #lyrics-extension-panel .ylp-zh-btn.on { opacity: 1; box-shadow: inset 0 -2px 0 currentColor; }
+      #lyrics-extension-panel .ylp-zh-btn:disabled { cursor: progress; }
       #lyrics-extension-panel .ylp-ed-title { font-weight: 600; font-size: 15px; margin-bottom: 6px; }
       #lyrics-extension-panel .ylp-ed-hint { font-size: 12px; opacity: 0.7; line-height: 1.6; margin-bottom: 10px; }
       #lyrics-extension-panel .ylp-ed-text {
@@ -3960,6 +4201,7 @@ function createLyricsPanel() {
         <button class="lyrics-btn ylp-translate-btn" id="translate-btn" title="顯示／隱藏翻譯">
           <span style="font-size: 13px; line-height: 1;">譯</span>
         </button>
+        <button class="lyrics-btn ylp-zh-btn" id="ylp-zh-btn" title="檢查這部影片有沒有 YouTube 中文字幕，有的話拿來當翻譯（轉成繁體）">中</button>
         <button class="lyrics-btn" id="ylp-dot-btn" title="縮成一個小圓點（點圓點就會展開）">
           <span style="font-size: 9px; line-height: 1;">●</span>
         </button>
@@ -4046,6 +4288,8 @@ function createLyricsPanel() {
   document.getElementById('edit-btn').addEventListener('click', () => ylpOpenEditor());
   ylpSetupHeaderSearch(panel);
   document.getElementById('ylp-dot-btn').addEventListener('click', () => ylpEnterDot());
+  document.getElementById('ylp-zh-btn').addEventListener('click', () => ylpZhToggle());
+  ylpZhUpdateButton();
   // 在面板上按右鍵：縮成小圓點，和按「●」一樣
   // 輸入框、編輯與打點畫面保留原本的右鍵選單；按住 Shift 再按右鍵也會出現瀏覽器原本的選單
   panel.addEventListener('contextmenu', (e) => {
@@ -4156,6 +4400,7 @@ async function detectAndShowLyrics() {
     // Boxes 1-2 filled during cleaning/parsing
     const parsedData = titleCleaner.clean(rawTitle, channelName, isCover);
     parsedData._gen = gen;
+    parsedData._skipSeen = refreshing; // 重新搜尋時不再給看過的歌詞
     
     if (!lyricsPanel) {
       lyricsPanel = createLyricsPanel();
@@ -4241,7 +4486,8 @@ async function detectAndShowLyrics() {
           song: musicInfo.song,
           originalTitle: musicInfo.song,
           isCover: false,
-          language: 'en'
+          language: 'en',
+          _skipSeen: refreshing
         };
         
         const result = await ylpSearchAll(musicParsed);
@@ -4424,7 +4670,8 @@ function setupManualSearchDynamic(input, button, cancelLoading = false) {
         song: manualSong,
         originalTitle: manualSong,
         isCover: false,
-        language: 'en'
+        language: 'en',
+        _skipSeen: true
       };
       
       const result = await ylpSearchAll(manualParsed);
@@ -4450,7 +4697,7 @@ function setupManualSearchDynamic(input, button, cancelLoading = false) {
         
         displayLyrics(result, false);
       } else {
-        button.textContent = '❌ 還是找不到';
+        button.textContent = ylpHasSeen() ? '❌ 沒有其他歌詞了' : '❌ 還是找不到';
         setTimeout(() => {
           button.disabled = false;
           button.textContent = '重新搜尋';
@@ -4476,9 +4723,12 @@ function setupManualSearchDynamic(input, button, cancelLoading = false) {
 
 function displayLyrics(result, isCached = false) {
   const content = document.getElementById('lyrics-content');
+  result = ylpTradResult(result); // 原文一律不出現簡體
   
   // Store current result for re-rendering (minimize toggle)
   currentLyricsResult = { ...result, isCached };
+  ylpMarkSeen(currentVideoId, result.lyrics);
+  ylpZhLoadForVideo(currentVideoId);
   if (ylpOffsetVideo !== currentVideoId) ylpLoadOffset(currentVideoId);
   ylpCollectToLibrary(currentVideoId, currentLyricsResult);
   ylpLyricsState = result.synced ? 'found' : 'plain';

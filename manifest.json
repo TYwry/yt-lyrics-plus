@@ -26,6 +26,7 @@
     },
     {
       "js": [
+        "vendor/opencc-cn2t.js",
         "themes.js",
         "content.js"
       ],
@@ -55,6 +56,6 @@
     "scripting",
     "storage"
   ],
-  "version": "1.3.16",
+  "version": "1.3.17",
   "minimum_chrome_version": "111"
 }

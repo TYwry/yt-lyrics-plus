@@ -246,7 +246,11 @@ chrome.storage.sync.get({ darkMode: true }, (s) => {
 (async () => {
   try {
     const n = await ylpLibAdoptCached();
-    if (n) ylpMsg(`已把以前找過的 ${n} 首歌補收進歌詞庫。`, 'ok');
+    const t = await ylpLibConvertAllToTrad();
+    const parts = [];
+    if (n) parts.push(`已把以前找過的 ${n} 首歌補收進歌詞庫`);
+    if (t) parts.push(`${t} 首的簡體字已轉成繁體`);
+    if (parts.length) ylpMsg(parts.join('，') + '。', 'ok');
   } catch (e) {
     ylpMsg('補收以前找過的歌時發生錯誤：' + ((e && e.message) || e), 'err');
   }

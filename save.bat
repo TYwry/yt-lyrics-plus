@@ -2,7 +2,7 @@
 chcp 65001 >nul
 setlocal
 cd /d "%~dp0"
-if not exist ".git" ( echo 還沒連結 GitHub，請先雙擊 setup-github.bat。& pause & exit /b 1 )
+if not exist ".git" ( echo 這個資料夾還沒連結 GitHub（找不到 .git 資料夾）：搬資料夾時請連 .git 一起搬過來。& pause & exit /b 1 )
 
 git add -A
 call :safety || exit /b 1

@@ -10,6 +10,44 @@ var YLP_LIB_MAX_FILE = 10 * 1024 * 1024; // 匯入檔案上限 10 MB
 var YLP_LIB_MAX_SONGS = 5000;
 var YLP_LIB_MAX_LRC = 200 * 1024;         // 每首歌詞上限 200 KB
 
+// 簡體轉繁體（需要先載入 vendor/opencc-cn2t.js；沒載入時原樣回傳）
+// 有日文假名或韓文的內容不轉（日文漢字和簡體字有些長得一樣）
+var ylpLibS2T = null;
+function ylpLibToTradLine(s) {
+  s = String(s == null ? '' : s);
+  if (!/\p{Script=Han}/u.test(s) || /[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(s)) return s;
+  try {
+    if (!ylpLibS2T) {
+      if (!globalThis.OpenCC) return s;
+      ylpLibS2T = globalThis.OpenCC.Converter({ from: 'cn', to: 'twp' });
+    }
+    return ylpLibS2T(s);
+  } catch (e) {
+    console.warn('[簡轉繁] 轉換失敗：', e);
+    return s;
+  }
+}
+function ylpLibToTrad(text) {
+  const t = String(text == null ? '' : text);
+  if (/[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(t)) return t;
+  return t.split('\n').map(ylpLibToTradLine).join('\n');
+}
+
+// 歌詞庫裡已經存著的簡體歌詞，一次轉成繁體（不改更新時間）；回傳轉換的首數
+async function ylpLibConvertAllToTrad() {
+  if (!globalThis.OpenCC) return 0;
+  const all = await chrome.storage.local.get(null);
+  const toSet = {};
+  for (const [k, d] of Object.entries(all)) {
+    if (!k.startsWith('ylpLocal:') || !d || typeof d.lrc !== 'string') continue;
+    const lrc = ylpLibToTrad(d.lrc), song = ylpLibToTradLine(d.song || ''), artist = ylpLibToTradLine(d.artist || '');
+    if (lrc !== d.lrc || song !== (d.song || '') || artist !== (d.artist || '')) toSet[k] = { ...d, lrc, song, artist };
+  }
+  const n = Object.keys(toSet).length;
+  if (n) await chrome.storage.local.set(toSet);
+  return n;
+}
+
 function ylpLibIsVideoId(id) { return /^[\w-]{11}$/.test(String(id || '')); }
 
 function ylpLibText(v, max) {
@@ -99,11 +137,11 @@ function ylpLibBuildExport(entries) {
     exported: Date.now(),
     songs: entries.map((e) => ({
       videoId: e.videoId,
-      song: e.song,
-      artist: e.artist,
+      song: ylpLibToTradLine(e.song),
+      artist: ylpLibToTradLine(e.artist),
       title: e.title,
       updated: e.updated || Date.now(),
-      lrc: ylpLibBakeOffset(e.lrc, e.offset),
+      lrc: ylpLibToTrad(ylpLibBakeOffset(e.lrc, e.offset)),
     })).filter((s) => s.lrc),
   }, null, 1);
 }
@@ -132,11 +170,11 @@ function ylpLibCleanSong(s) {
   if (lines.length < 2) return null;
   return {
     videoId: s.videoId,
-    song: ylpLibText(s.song),
-    artist: ylpLibText(s.artist),
+    song: ylpLibToTradLine(ylpLibText(s.song)),
+    artist: ylpLibToTradLine(ylpLibText(s.artist)),
     title: ylpLibText(s.title, 300),
     updated: Math.min(Number(s.updated) || 0, Date.now()),
-    lrc: ylpLibLinesToLrc(lines),
+    lrc: ylpLibToTrad(ylpLibLinesToLrc(lines)),
   };
 }
 
@@ -163,8 +201,8 @@ async function ylpLibAdoptCached() {
     const lines = ylpLibParseLrc(c.lyrics);
     if (lines.length < 2) continue;
     toSet['ylpLocal:' + videoId] = {
-      lrc: ylpLibLinesToLrc(lines),
-      artist: ylpLibText(c.artist), song: ylpLibText(c.song), title: '',
+      lrc: ylpLibToTrad(ylpLibLinesToLrc(lines)),
+      artist: ylpLibToTradLine(ylpLibText(c.artist)), song: ylpLibToTradLine(ylpLibText(c.song)), title: '',
       source: tuned ? 'tuned' : 'found', created: Number(c.cachedAt) || now, updated: now,
     };
   }

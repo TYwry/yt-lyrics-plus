@@ -2,7 +2,7 @@
 // （中文版已移除原本的使用數據追蹤，不會再把使用紀錄傳到外部伺服器）
 'use strict';
 
-importScripts('library-core.js');
+importScripts('vendor/opencc-cn2t.js', 'library-core.js');
 
 // 安裝包裡附的歌詞（bundled-lyrics.json，由「publish-release.bat」發布時放入）：安裝或更新時匯入歌詞庫
 async function ylpImportBundled() {
@@ -29,6 +29,8 @@ async function ylpAdoptCachedSafe() {
   try {
     const n = await ylpLibAdoptCached();
     if (n) console.log('[歌詞庫] 補收以前找過的歌：' + n + ' 首');
+    const t = await ylpLibConvertAllToTrad();
+    if (t) console.log('[歌詞庫] 簡體轉繁體：' + t + ' 首');
   } catch (e) {
     console.warn('[歌詞庫] 補收以前找過的歌失敗：', (e && e.message) || e);
   }

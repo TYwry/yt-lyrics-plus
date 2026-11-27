@@ -1,3 +1,7 @@
+// 同一份設定程式有兩種顯示方式：點外掛圖示的小視窗（只有外觀），以及完整的設定分頁（popup.html?page=settings）
+const YLP_SETTINGS_PAGE = new URLSearchParams(location.search).get('page') === 'settings';
+if (YLP_SETTINGS_PAGE) document.body.classList.add('settings-page');
+
 console.log('🎵 Popup loaded');
 
 let autoShowEnabled = true;
@@ -232,11 +236,7 @@ chrome.storage.sync.get(['autoShowLyrics', 'darkMode'], (result) => {
   updateToggleUI();
 });
 
-// === START TUTORIAL ===
-setTimeout(async () => {
-  console.log('🎓 Attempting to start tutorial...');
-  await tutorial.start(currentLanguage);
-}, 800);
+// 新手引導已拿掉（v1.3.17）：打開時不再跳出導覽
 
 // === TOGGLE HANDLERS ===
 
@@ -531,6 +531,7 @@ const YLP_DEFAULTS = { autoScroll: true, pauseSeconds: 4, translate: true, targe
 chrome.storage.sync.get(YLP_DEFAULTS, (s) => {
   document.getElementById('autoScrollToggle').classList.toggle('active', s.autoScroll !== false);
   document.getElementById('translateToggle').classList.toggle('active', s.translate !== false);
+  document.getElementById('skipEnglishToggle').classList.toggle('active', !!s.skipEnglish);
   document.getElementById('karaokeWipeToggle').classList.toggle('active', s.karaokeWipe !== false);
   document.getElementById('ytCaptionsToggle').classList.toggle('active', s.useYouTubeCaptions !== false);
   document.getElementById('lyricsDisplaySelect').value = s.lyricsDisplay === 'translation' ? 'translation' : 'both';
@@ -538,7 +539,7 @@ chrome.storage.sync.get(YLP_DEFAULTS, (s) => {
   document.getElementById('targetLangSelect').value = s.targetLang;
 });
 
-for (const [id, key] of [['autoScrollToggle', 'autoScroll'], ['translateToggle', 'translate'], ['karaokeWipeToggle', 'karaokeWipe'], ['ytCaptionsToggle', 'useYouTubeCaptions']]) {
+for (const [id, key] of [['autoScrollToggle', 'autoScroll'], ['translateToggle', 'translate'], ['skipEnglishToggle', 'skipEnglish'], ['karaokeWipeToggle', 'karaokeWipe'], ['ytCaptionsToggle', 'useYouTubeCaptions']]) {
   document.getElementById(id).addEventListener('click', function () {
     const on = !this.classList.contains('active');
     this.classList.toggle('active', on);
@@ -765,9 +766,30 @@ document.addEventListener('keydown', (e) => {
 });
 
 // === 歌詞庫 ===
-document.getElementById('openLibraryBtn').addEventListener('click', () => {
-  chrome.tabs.create({ url: chrome.runtime.getURL('library.html') });
-  window.close();
+document.getElementById('openLibraryBtn').addEventListener('click', function () {
+  this.disabled = true;
+  this.textContent = '正在打開…';
+  chrome.tabs.create({ url: chrome.runtime.getURL('library.html') }, () => {
+    this.disabled = false;
+    this.textContent = '📚 打開';
+    if (chrome.runtime.lastError) { showStatus('歌詞庫打不開：' + chrome.runtime.lastError.message, 'error'); return; }
+    if (!YLP_SETTINGS_PAGE) window.close(); // 設定分頁不關自己
+  });
+});
+
+// === 詳細設定（開新分頁） ===
+document.getElementById('openSettingsBtn').addEventListener('click', function () {
+  this.disabled = true;
+  this.textContent = '正在打開設定分頁…';
+  chrome.tabs.create({ url: chrome.runtime.getURL('popup.html?page=settings') }, () => {
+    if (chrome.runtime.lastError) {
+      this.disabled = false;
+      this.textContent = '⚙ 詳細設定';
+      showStatus('設定分頁打不開：' + chrome.runtime.lastError.message, 'error');
+      return;
+    }
+    window.close();
+  });
 });
 
 // === 點外掛圖示時顯示歌詞 ===
