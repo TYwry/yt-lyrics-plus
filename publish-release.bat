@@ -23,9 +23,9 @@ for %%f in (vendor\opencc-cn2t.js vendor\OPENCC-LICENSE.txt) do (
 )
 if exist "bundled-lyrics.json" (
   copy /y "bundled-lyrics.json" "%STAGE%\YT-Lyrics\" >nul
-  echo 已附上歌詞庫 bundled-lyrics.json。
+  echo 已附上歌詞庫 bundled-lyrics.json
 ) else (
-  echo 這次沒有附歌詞庫（資料夾裡沒有 bundled-lyrics.json）。
+  echo 這次沒有附歌詞庫：資料夾裡沒有 bundled-lyrics.json
 )
 if exist "%OUT%" del "%OUT%"
 powershell -NoProfile -Command "Compress-Archive -Path (Join-Path $env:STAGE 'YT-Lyrics') -DestinationPath $env:OUT -Force"
